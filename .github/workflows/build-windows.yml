@@ -91,6 +91,17 @@ jobs:
           print(manifest)
           PY
           sha256sum dist/ThanhKhe_Game.exe dist/ThanhKhe_Launcher.exe
+      - name: Prepare launcher ZIP fallback
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          source = pathlib.Path('dist/ThanhKhe_Launcher.exe')
+          target = pathlib.Path('dist/ThanhKhe_Launcher_Windows.zip')
+          with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED, compresslevel=7) as z:
+              z.write(source, arcname=source.name)
+          assert target.stat().st_size > 100_000
+          print('Launcher ZIP bytes:', target.stat().st_size)
+          PY
       - name: Publish permanent public Release assets
         uses: softprops/action-gh-release@v2
         with:
@@ -106,6 +117,7 @@ jobs:
             Tiến độ lưu của Godot được giữ khi cập nhật.
           files: |
             dist/ThanhKhe_Launcher.exe
+            dist/ThanhKhe_Launcher_Windows.zip
             dist/ThanhKhe_Game.exe
             dist/latest.json
           fail_on_unmatched_files: true
