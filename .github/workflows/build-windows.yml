@@ -23,6 +23,14 @@ jobs:
           test -s "$HOME/.local/share/godot/export_templates/4.6.stable/windows_release_x86_64.exe"
       - name: Import project
         run: godot --headless --path . --editor --import --quit
+      - name: Startup smoke test
+        run: |
+          godot --headless --path . --quit-after 10 > smoke.log 2>&1 || { cat smoke.log; exit 1; }
+          cat smoke.log
+          if grep -Ei 'SCRIPT ERROR|Parse Error|Invalid call|Failed to load script' smoke.log; then
+            echo 'Runtime or script errors detected'
+            exit 1
+          fi
       - name: Export single-file Windows executable
         run: |
           mkdir -p dist
