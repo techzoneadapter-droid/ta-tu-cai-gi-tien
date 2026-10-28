@@ -6,6 +6,8 @@ Bản chơi thử **2D Thanh Khê** viết bằng **Godot 4.6**. Chơi đơn tr�
 
 **[TẢI LAUNCHER WINDOWS (mở một lần, tự cập nhật game)](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest/download/ThanhKhe_Launcher.exe)**
 
+**TẢI DẠNG ZIP (dự phòng khi trình duyệt chặn EXE):** [ThanhKhe_Launcher_Windows.zip](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest/download/ThanhKhe_Launcher_Windows.zip). Giải nén rồi mở `ThanhKhe_Launcher.exe` như bình thường.
+
 Nếu đường tải trực tiếp báo lỗi, vào [**GitHub Releases — bản mới nhất**](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest) rồi chọn **ThanhKhe_Launcher.exe** trong phần Assets.
 
 1. Tải `ThanhKhe_Launcher.exe` về Windows 64-bit và mở.
