@@ -1,0 +1,33 @@
+name: Build Windows demo
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-windows:
+    name: Export ThanhKhe_Demo.exe
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.6
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Export single-file Windows executable
+        run: |
+          mkdir -p dist
+          godot --headless --path . --export-release 'Windows Desktop' dist/ThanhKhe_Demo.exe
+          test -s dist/ThanhKhe_Demo.exe
+          ls -lh dist
+      - name: Upload Windows demo
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThanhKhe_Demo_Windows
+          path: dist/ThanhKhe_Demo.exe
+          if-no-files-found: error
+          retention-days: 30
