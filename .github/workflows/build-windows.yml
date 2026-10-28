@@ -1,46 +1,111 @@
-name: Build Windows demo
+name: Windows game and auto-update launcher
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export-windows:
-    name: Export ThanhKhe_Demo.exe
+  export-game:
+    name: Export Godot game for Windows
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.6
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-      - name: Install export templates from image
+      - uses: actions/checkout@v4
+      - name: Install Godot export templates
         run: |
           mkdir -p "$HOME/.local/share/godot/export_templates"
           cp -a /root/.local/share/godot/export_templates/4.6.stable "$HOME/.local/share/godot/export_templates/"
           test -s "$HOME/.local/share/godot/export_templates/4.6.stable/windows_release_x86_64.exe"
-      - name: Import project
-        run: godot --headless --path . --editor --import --quit
-      - name: Startup smoke test
+      - name: Import and smoke test game
         run: |
+          godot --headless --path . --editor --import --quit
           godot --headless --path . --quit-after 10 > smoke.log 2>&1 || { cat smoke.log; exit 1; }
           cat smoke.log
-          if grep -Ei 'SCRIPT ERROR|Parse Error|Invalid call|Failed to load script' smoke.log; then
-            echo 'Runtime or script errors detected'
-            exit 1
-          fi
-      - name: Export single-file Windows executable
+          if grep -Ei 'SCRIPT ERROR|Parse Error|Invalid call|Failed to load script' smoke.log; then exit 1; fi
+      - name: Export game EXE
         run: |
           mkdir -p dist
-          godot --headless --path . --export-release 'Windows Desktop' dist/ThanhKhe_Demo.exe
-          test -s dist/ThanhKhe_Demo.exe
-          ls -lh dist
-      - name: Upload Windows demo
-        uses: actions/upload-artifact@v4
+          godot --headless --path . --export-release 'Windows Desktop' dist/ThanhKhe_Game.exe
+          test -s dist/ThanhKhe_Game.exe
+      - uses: actions/upload-artifact@v4
         with:
-          name: ThanhKhe_Demo_Windows
-          path: dist/ThanhKhe_Demo.exe
+          name: game-windows
+          path: dist/ThanhKhe_Game.exe
           if-no-files-found: error
-          retention-days: 30
+
+  build-launcher:
+    name: Build self-contained Windows launcher
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish launcher as one EXE
+        shell: pwsh
+        run: |
+          dotnet publish launcher/ThanhKheLauncher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o dist/launcher
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path 'dist/launcher/ThanhKhe_Launcher.exe')) { throw 'Launcher EXE missing' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-windows
+          path: dist/launcher/ThanhKhe_Launcher.exe
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish versioned GitHub Release
+    needs: [export-game, build-launcher]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: game-windows
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: launcher-windows
+          path: dist
+      - name: Write integrity manifest
+        env:
+          DEMO_VERSION: v0.2.${{ github.run_number }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          exe = pathlib.Path('dist/ThanhKhe_Game.exe')
+          assert exe.stat().st_size > 100_000
+          assert pathlib.Path('dist/ThanhKhe_Launcher.exe').stat().st_size > 100_000
+          manifest = {
+              'version': os.environ['DEMO_VERSION'],
+              'asset': exe.name,
+              'size': exe.stat().st_size,
+              'sha256': hashlib.sha256(exe.read_bytes()).hexdigest(),
+          }
+          pathlib.Path('dist/latest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+          print(manifest)
+          PY
+          sha256sum dist/ThanhKhe_Game.exe dist/ThanhKhe_Launcher.exe
+      - name: Publish permanent public Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.2.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Thanh Khê Demo v0.2.${{ github.run_number }} – launcher tự cập nhật
+          make_latest: true
+          draft: false
+          prerelease: false
+          body: |
+            Demo offline Thanh Khê. Tải **ThanhKhe_Launcher.exe** một lần;
+            launcher tự kiểm tra GitHub Releases và tải game mới mỗi lần mở.
+            Tiến độ lưu của Godot được giữ khi cập nhật.
+          files: |
+            dist/ThanhKhe_Launcher.exe
+            dist/ThanhKhe_Game.exe
+            dist/latest.json
+          fail_on_unmatched_files: true
