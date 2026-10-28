@@ -60,13 +60,14 @@ jobs:
       - name: Pack portable launcher ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/launcher/ThanhKhe_Launcher.exe -DestinationPath dist/ThanhKhe_Launcher_Windows.zip -Force
+          Copy-Item dist/launcher/ThanhKhe_Launcher.exe dist/ThanhKhe_Launcher.exe -Force
+          Compress-Archive -Path dist/ThanhKhe_Launcher.exe -DestinationPath dist/ThanhKhe_Launcher_Windows.zip -Force
           if (!(Test-Path dist/ThanhKhe_Launcher_Windows.zip)) { throw 'Launcher ZIP missing' }
       - uses: actions/upload-artifact@v4
         with:
           name: launcher-windows
           path: |
-            dist/launcher/ThanhKhe_Launcher.exe
+            dist/ThanhKhe_Launcher.exe
             dist/ThanhKhe_Launcher_Windows.zip
           if-no-files-found: error
 
