@@ -1,44 +1,50 @@
 # Thiên Đạo Viết Lại — Thanh Khê Demo
 
-Bản chơi thử **2D Thanh Khê** viết bằng **Godot 4.6**. Chơi đơn trên Windows x64, đồ họa hiện tại vẽ bằng mã nguồn gốc để thử gameplay, chưa phải mỹ thuật cuối cùng. Không sử dụng mã hay tài sản Ngọc Rồng Online/Ninja School.
+**Playable offline demo**, developed as an original 2D cultivation game vertical slice (Godot 4.6, GDScript). This is **not** yet an MMORPG. The current artwork is cut from the original concept illustrations created for this project and packaged into high-resolution painted backgrounds and character sprite transparencies. No source code or artwork from Ngọc Rồng Online or Ninja School is used.
 
-## Tải và cập nhật Windows
+## Windows download
 
-**[TẢI LAUNCHER WINDOWS (mở một lần, tự cập nhật game)](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest/download/ThanhKhe_Launcher.exe)**
+Download **[ThanhKhe_Launcher.exe](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest/download/ThanhKhe_Launcher.exe)** or the [ZIP launcher](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest). The launcher checks GitHub Releases each time and updates the game automatically. Windows might show a SmartScreen warning for unsigned independent software.
 
-**TẢI DẠNG ZIP (dự phòng khi trình duyệt chặn EXE):** [ThanhKhe_Launcher_Windows.zip](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest/download/ThanhKhe_Launcher_Windows.zip). Giải nén rồi mở `ThanhKhe_Launcher.exe` như bình thường.
+## Controls
 
-Nếu đường tải trực tiếp báo lỗi, vào [**GitHub Releases — bản mới nhất**](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest) rồi chọn **ThanhKhe_Launcher.exe** trong phần Assets.
+| Key | Action |
+| --- | --- |
+| A/D, arrows | Move |
+| Shift | Run |
+| Space/W/Up | Jump |
+| J / left mouse | Attack |
+| E | Talk to closest NPC / collect herb |
+| Hold R | Meditate beside the Spirit Tree |
+| 1 / 2 / 3 / 4 | Choose Thái Hư / Vạn Pháp / Thiên Đạo / Tán tu when invited |
+| I | Toggle character panel |
+| H | Help |
+| Enter | Start / dismiss dialog |
+| Escape | Close menu |
 
-1. Tải `ThanhKhe_Launcher.exe` về Windows 64-bit và mở.
-2. Lần đầu cần Internet. Launcher kiểm tra bản mới trên GitHub Releases, tải game vào `%LOCALAPPDATA%\ThienDaoVietLai\ThanhKhe`, kiểm SHA-256 và cài đặt.
-3. Nhấn **VÀO GAME**.
-4. Những lần sau **mở lại launcher đã tải**. Launcher tự kiểm tra, nếu có bản mới sẽ tải/cài đè phiên bản game trước; không cần tải lại launcher từ chat.
+## First quest line
 
-Nếu không có mạng nhưng đã cài game hợp lệ, launcher cho chơi offline. Tệp game tải trực tiếp [ThanhKhe_Game.exe](https://github.com/techzoneadapter-droid/ta-tu-cai-gi-tien/releases/latest/download/ThanhKhe_Game.exe) **không có chức năng tự cập nhật**, nên khuyên dùng launcher.
+1. Find **Tống tiên sinh** at the village library and speak (`E`).
+2. Pick **3 spirit herbs** (`E`) on the path toward the training meadow.
+3. Defeat **3 spirit creatures** at the eastern training grounds (`J`).
+4. Meditate beside the **Linh Thụ** (`R`, 4 seconds).
+5. Return to **Thôn trưởng**, choose one of the three factions or become a **tán tu** (`1`–`4`).
 
-**Lưu ý:** Bản demo chưa được ký mã số; Windows SmartScreen có thể hiển thị cảnh báo. Chỉ tải từ repository bạn tin cậy. Không cần chạy Administrator. Launcher hiện tải trọn file game khi có bản mới (không phải delta patch), nhưng tự động hóa hoàn toàn việc kiểm tra, tải và cài.
+EXP, cultivation, equipment, manuals, pet, body power and combat are prototypes for evaluating game feel, not final balancing. Auto-save is local to Godot's user data directory.
 
-## Lưu dữ liệu
+## Edit / Run from source
 
-Dữ liệu nhân vật nằm trong thư mục `user://` của Godot (tệp `thanh_khe_demo.json`), không được launcher ghi đè khi game cập nhật. Launcher cài game riêng tại thư mục người dùng và không xóa save.
+1. Install **Godot 4.6 standard** from https://godotengine.org/download/archive/4.6-stable/.
+2. Extract `visual_assets.zip` in the project root (so `assets/` exists). Open this folder as a Godot project and press F5.
+3. If changing Windows exports, use **Project → Export → Windows Desktop** and install Windows templates.
 
-## Điều khiển
+## Project status
 
-- **A/D hoặc mũi tên:** di chuyển. **Shift:** chạy. **Space:** nhảy.
-- **J / chuột trái:** đánh quái. **E:** trò chuyện / hái linh thảo.
-- **Giữ R** gần Linh Thụ: thiền định. **I:** xem nhân vật. **H:** hướng dẫn.
-- **1–4:** lựa chọn Thái Hư, Vạn Pháp, Thiên Đạo hoặc Tán tu sau nhiệm vụ.
+- Fully playable **single-player**, single-map proof of concept.
+- No servers, sign-up, networking, inventory persistence beyond the small local save, or full skeletal sprite animation yet.
+- Source code is intentionally small and data-driven enough for the next iteration.
+- Artwork v0.3 uses original Thanh Khê concept art as integrated panorama and hand-painted characters, but requires proper tilemap/animation passes for production.
 
-## Vòng chơi tân thủ
+## Visual assets (v0.3)
 
-Tìm Tống tiên sinh → hái ba linh thảo → hạ ba linh thú → thiền định cạnh Linh Thụ → gặp Thôn trưởng, chọn con đường tu luyện.
-
-## Phát triển và kiểm thử
-
-- Game: `game.gd`, `main.tscn`, `project.godot`.
-- Launcher: `launcher/Program.cs`, `launcher/ThanhKheLauncher.csproj`.
-- GitHub Actions: [**Windows game and auto-update launcher**](.github/workflows/build-windows.yml). Mỗi push lên `main` có build thành công sẽ tạo bản Release phiên bản `v0.2.<run_number>`, gắn game, launcher, và `latest.json` checksum.
-- Chạy Godot headless smoke test trước khi phát hành. Build .NET self-contained để **người chơi không phải tự cài .NET Runtime**.
-- Đây là prototype, chưa có server MMORPG, nhân vật/art cuối cùng, tự cập nhật launcher riêng hoặc download theo từng phần.
-
+`visual_assets.zip` contains the stylized background and transparent character portraits extracted from project-owned concept art; CI extracts it before importing Godot. These are prototype production assets with a matching license to the game project; they are not copied from unrelated games. The gameplay/quests and local save path are unchanged.

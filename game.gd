@@ -8,6 +8,16 @@ const SAVE_PATH := "user://thanh_khe_demo.json"
 const GOLD := Color("ecd49b")
 const INK := Color("1e2732")
 const CREAM := Color("fff1d2")
+const BG_ART: Texture2D = preload("res://assets/thanh_khe_panorama.jpg")
+const HERO_ART: Texture2D = preload("res://assets/player.png")
+const GIRL_ART: Texture2D = preload("res://assets/female.png")
+const SCHOLAR_ART: Texture2D = preload("res://assets/white_male.png")
+const VILLAGER_ART: Texture2D = preload("res://assets/white_female.png")
+const SMITH_ART: Texture2D = preload("res://assets/purple_male.png")
+const TRAINER_ART: Texture2D = preload("res://assets/purple_female.png")
+const HERO_PORTRAIT: Texture2D = preload("res://assets/portrait.jpg")
+const GOLD_LIGHT := Color("f4d9a5")
+
 
 var px := 390.0
 var py := FLOOR_Y
@@ -232,28 +242,66 @@ func panel(r: Rect2, fill: Color = Color(0.07,0.12,0.14,0.80)) -> void:
 	line(r.end.x - 48,r.end.y - 5,r.end.x - 6,r.end.y - 5,Color("f4d6a1"),1.8)
 
 func _draw() -> void:
-	draw_sky()
-	draw_set_transform(Vector2(-scroll_x * 0.13,0))
-	draw_far_hills()
-	draw_set_transform(Vector2(-scroll_x * 0.39,0))
-	draw_mid_hills()
-	draw_set_transform(Vector2(-scroll_x,0))
-	draw_village()
-	for herb in herbs:
-		if not herb["taken"]: draw_herb(float(herb["x"]))
-	for npc in npcs: draw_person(float(npc["x"]),FLOOR_Y, npc["color"],false, npc["name"])
-	if stage >= 2:
-		for mob in monsters:
-			if mob["alive"]: draw_mob(float(mob["x"]), FLOOR_Y)
-	draw_person(px,py,Color("ecf0f4"),true,"Thiên Hành")
-	for spark in sparkles:
-		var sx: float = float(spark["x"])
-		var sy: float = float(spark["y"]) - (1.0 - float(spark["t"])) * 36.0
-		circle(sx, sy, 3.0 + float(spark["t"]) * 4.0, spark["color"])
-	draw_set_transform(Vector2.ZERO)
-	draw_hud()
-	if intro: draw_intro()
-	if page != "": draw_overlay()
+    # Authentic concept-art panorama: real hand-painted assets replace vector placeholder scenery.
+    draw_texture_rect_region(BG_ART, Rect2(0, 0, WIDTH, HEIGHT), Rect2(scroll_x, 0, WIDTH, HEIGHT))
+    draw_art_atmosphere()
+    draw_set_transform(Vector2(-scroll_x, 0))
+    for herb in herbs:
+        if not herb["taken"]:
+            draw_herb(float(herb["x"]))
+    for i in range(npcs.size()):
+        var npc: Dictionary = npcs[i]
+        var tex: Texture2D = [SCHOLAR_ART, SCHOLAR_ART, GIRL_ART, SMITH_ART, TRAINER_ART][i]
+        draw_concept_character(float(npc["x"]), FLOOR_Y, tex, false, str(npc["name"]))
+    if stage >= 2:
+        for mob in monsters:
+            if mob["alive"]:
+                draw_mob(float(mob["x"]), FLOOR_Y)
+    draw_concept_character(px, py, HERO_ART, true, "Thiên Hành")
+    for spark in sparkles:
+        var sx: float = float(spark["x"])
+        var sy: float = float(spark["y"]) - (1.0 - float(spark["t"])) * 36.0
+        circle(sx, sy, 3.0 + float(spark["t"]) * 4.0, spark["color"])
+    draw_set_transform(Vector2.ZERO)
+    draw_hud()
+    if intro:
+        draw_intro()
+    if page != "":
+        draw_overlay()
+
+func draw_art_atmosphere() -> void:
+    # Soft vertical glow, drifting blossom particles, light haze across the scene.
+    for i in range(11):
+        var rx := fposmod(float(i * 149) + world_time * (9.0 + float(i%3)*6.0), 1370.0) - 45.0
+        var ry := 130.0 + float((i * 67) % 510) + sin(world_time*0.6+float(i)) * 13.0
+        draw_circle(Vector2(rx, ry), 2.5 + float(i%3), Color(1, 0.82, 0.83, 0.45))
+    # The art shows a natural path; do not cover it with solid polygons.
+    draw_rect(Rect2(0, 688, WIDTH, 32), Color(0.05,0.13,0.13,0.15))
+
+func draw_concept_character(x: float, foot: float, art: Texture2D, is_player: bool, title: String) -> void:
+    var bob := abs(sin(walk_phase))*3.0 if is_player and py >= FLOOR_Y else 0.0
+    var y := foot - bob
+    draw_ellipse_shadow(x, foot + 1, 29, 8)
+    var width := 87.0 if is_player else 77.0
+    var height := 177.0 if is_player else 153.0
+    draw_texture_rect(art, Rect2(x-width*.5, y-height, width, height), false)
+    if is_player:
+        # Motion cue and a luminous sword stroke retain the existing combat feedback.
+        if attack_anim > 0.0:
+            var fx := float(face)
+            draw_arc(Vector2(x+fx*18.0,y-86.0), 62, -PI/2 if face==1 else PI/2, PI/2 if face==1 else 3.0*PI/2, 24, Color("bffcff"),6)
+            line(x+fx*22.0,y-72.0,x+fx*97.0,y-104.0, Color("ffffff"),4.0)
+        draw_rect(Rect2(x-28,y-height-17,56,5),Color("23383c"))
+        draw_rect(Rect2(x-28,y-height-17,56.0*float(hp)/float(max_hp),5),Color("82eac2"))
+    else:
+        draw_circle(Vector2(x,y-height-22), 11, Color("f8c572"))
+        txt(x-4,y-height-16,"!",14,Color("4b3020"))
+    txt(x-91,y-height-30,title,15,GOLD_LIGHT,HORIZONTAL_ALIGNMENT_CENTER,182)
+
+func draw_ellipse_shadow(x: float, y: float, rad_x: float, rad_y: float) -> void:
+    draw_set_transform(Vector2(-scroll_x+x,y),0.0,Vector2(rad_x,rad_y))
+    draw_circle(Vector2.ZERO,1.0,Color(0.045,0.105,0.10,0.40))
+    draw_set_transform(Vector2(-scroll_x,0.0))
 
 func draw_sky() -> void:
 	for y in range(0,HEIGHT,7):
@@ -451,61 +499,65 @@ func draw_person(x: float, foot: float, robe: Color, player: bool, name: String)
 	txt(x-91,y-137,name,16,GOLD,HORIZONTAL_ALIGNMENT_CENTER,182)
 
 func draw_hud() -> void:
-	panel(Rect2(18,18,360,106))
-	circle(67,69,31,Color("5d7780"))
-	circle(67,63,13,Color("e1c3aa"))
-	polygon([Vector2(40,89),Vector2(67,75),Vector2(95,89)],Color("c9dfe4"))
-	txt(113,43,"THIÊN HÀNH",21,GOLD)
-	txt(114,67,"Phàm Nhân  →  Luyện Khí | Tầng 1",14,Color("d0dec9"))
-	draw_rect(Rect2(114,76,238,11),Color("442e33"))
-	draw_rect(Rect2(114,76,238*float(hp)/float(max_hp),11),Color("cb6d6c"))
-	draw_rect(Rect2(114,92,238,9),Color("314657"))
-	draw_rect(Rect2(114,92,238*float(mp)/120.0,9),Color("72bed8"))
-	txt(258,85,"%d/%d" % [hp,max_hp],11,CREAM)
-	panel(Rect2(18,136,376,184))
-	txt(36,163,"NHIỆM VỤ TÂN THỦ",19,GOLD)
-	var quest := ""
-	match stage:
-		0: quest = "Gặp Tống tiên sinh tại thư quán.\nTiếp cận ông và nhấn [E]."
-		1: quest = "Thu thập linh thảo: %d/3\nDọc đường phía Đông · nhấn [E]." % collected
-		2: quest = "Đánh bại linh thú: %d/3\nĐến bãi tập phía Đông · nhấn [J]." % defeated
-		3: quest = "Thiền định tại Linh Thụ ở giữa làng.\nGiữ [R] gần thân cây: %d%%." % int(meditation/4.0*100.0)
-		4: quest = "Về gặp Thôn trưởng rồi chọn đạo lộ.\n[1] Thái Hư   [2] Vạn Pháp\n[3] Thiên Đạo [4] Tán tu"
-		_: quest = "Hoàn thành tuyến Thanh Khê!\nĐạo lộ: %s\nPhiên bản sau sẽ mở nhiệm vụ mới." % faction
-	var lines := quest.split("\n")
-	for i in range(lines.size()): txt(35,194+float(i)*27.0,lines[i],15,Color("e8efdd"))
-	panel(Rect2(1009,18,255,126))
-	txt(1030,44,"THÔN THANH KHÊ",19,GOLD)
-	txt(1030,68,"Nhân Giới · Vùng tân thủ",14,Color("d0dfd5"))
-	draw_rect(Rect2(1030,78,211,39),Color("38585a"))
-	for i in range(7): circle(1040.0+float(i)*31.0,96.0+sin(float(i)*1.6)*10.0,8.0,Color("80bba3"))
-	var dot := 1040.0 + clampf(px/LAND_END,0.0,1.0)*188.0
-	circle(dot,100,6,Color("fff0b0"))
-	if dialog_timer > 0.0:
-		panel(Rect2(346,575,710,106),Color(0.07,0.12,0.15,0.92))
-		var ls := dialog.split("\n")
-		for i in range(min(3,ls.size())): txt(366,607+float(i)*24.0,ls[i],16,Color("f8eacd"))
-	# Middle of screen: world objective arrow.
-	var destination := 490.0
-	match stage:
-		1: destination = 1050.0 if not herbs[0]["taken"] else 1740.0 if not herbs[1]["taken"] else 2080.0
-		2: destination = 2770.0
-		3: destination = 1430.0
-		4: destination = 870.0
-		5: destination = px
-	if destination-scroll_x > 1240.0: txt(1060,165,"MỤC TIÊU  →",14,GOLD)
-	elif destination-scroll_x < 40.0: txt(60,345,"←  MỤC TIÊU",14,GOLD)
-	panel(Rect2(18,625,306,75))
-	txt(34,649,"Linh thạch: %d" % money,15,GOLD)
-	txt(34,673,"EXP: %d / 250      SM: 100" % exp_points,15,Color("e2eee5"))
-	panel(Rect2(888,627,373,72))
-	txt(906,649,"A/D: Đi  •  Space: Nhảy  •  Shift: Chạy",13,CREAM)
-	txt(906,674,"E: Tương tác  •  J: Đánh  •  I: Nhân vật",13,CREAM)
-	if dialog_timer == 0.0:
-		for npc in npcs:
-			if abs(float(npc["x"])-px)<100:
-				txt(505,450,"[E] Trò chuyện với %s" % npc["name"],18,Color("fff4cd"))
-				break
+    # Jade, ink and warm-gold fantasy UI; less obstruction than the first prototype.
+    panel(Rect2(16,14,295,98),Color(0.035,0.075,0.085,0.80))
+    draw_texture_rect(HERO_PORTRAIT,Rect2(25,23,66,72),false)
+    draw_rect(Rect2(23,21,70,77),Color("dbb77c"),false,1.8)
+    txt(103,39,"THIÊN HÀNH",19,GOLD_LIGHT)
+    txt(103,59,"Luyện Khí · Tầng 1",13,Color("e5e9da"))
+    draw_rect(Rect2(103,69,189,9),Color("493a44"))
+    draw_rect(Rect2(103,69,189.0*float(hp)/float(max_hp),9),Color("d45f65"))
+    draw_rect(Rect2(103,83,189,7),Color("263c50"))
+    draw_rect(Rect2(103,83,189.0*float(mp)/120.0,7),Color("69c5e9"))
+    txt(234,76,"%d/%d" % [hp,max_hp],10,CREAM)
+    # Quest panel shrunk from 376x184 to 320x134 and kept translucent.
+    panel(Rect2(16,123,320,150),Color(0.035,0.075,0.080,0.72))
+    txt(31,148,"NHIỆM VỤ TÂN THỦ",17,GOLD_LIGHT)
+    var quest := ""
+    match stage:
+        0: quest = "Đến Thư Quán gặp Tống tiên sinh.\nĐứng gần và nhấn [E]."
+        1: quest = "Hái linh thảo bên đường: %d/3\nĐến gần bụi cây, nhấn [E]." % collected
+        2: quest = "Đánh bại linh thú: %d/3\nBãi tập phía Đông · nhấn [J]." % defeated
+        3: quest = "Thiền định bên Linh Thụ giữa làng.\nGiữ [R] trong 4 giây: %d%%." % int(meditation/4.0*100.0)
+        4: quest = "Về gặp Thôn trưởng.\n[1] Thái Hư  [2] Vạn Pháp\n[3] Thiên Đạo [4] Tán tu"
+        _: quest = "Đã hoàn thành Thanh Khê!\nĐạo lộ: %s" % faction
+    var quest_lines := quest.split("\n")
+    for i in range(quest_lines.size()):
+        txt(32,175+float(i)*24.0,quest_lines[i],14,Color("f9f0d9"))
+    panel(Rect2(1033,14,232,91),Color(0.035,0.07,0.082,0.77))
+    txt(1050,40,"THÔN THANH KHÊ",17,GOLD_LIGHT)
+    txt(1050,59,"Nhân Giới · Vùng tân thủ",12,CREAM)
+    draw_rect(Rect2(1051,66,196,25),Color(0.12,0.27,0.24,0.88))
+    for i in range(7):
+        draw_circle(Vector2(1061.0+float(i)*29.0,78.0+sin(float(i)*1.6)*5.0),4.0,Color("6cc9a1"))
+    draw_circle(Vector2(1061.0+clampf(px/LAND_END,0.0,1.0)*178.0,78),6,Color("ffd58f"))
+    var destination := 490.0
+    match stage:
+        1: destination = 1050.0 if not herbs[0]["taken"] else 1740.0 if not herbs[1]["taken"] else 2080.0
+        2: destination = 2770.0
+        3: destination = 1430.0
+        4: destination = 870.0
+        5: destination = px
+    if destination-scroll_x>1240.0:
+        txt(1035,139,"MỤC TIÊU  →",13,GOLD_LIGHT)
+    elif destination-scroll_x<40.0:
+        txt(33,296,"←  MỤC TIÊU",13,GOLD_LIGHT)
+    if dialog_timer>0.0:
+        panel(Rect2(318,591,690,87),Color(0.035,0.066,0.072,0.90))
+        var ls:=dialog.split("\n")
+        for i in range(min(2,ls.size())):
+            txt(335,624+float(i)*24,ls[i],14,Color("fff4df"))
+    panel(Rect2(16,643,246,62),Color(0.032,0.077,0.084,0.81))
+    txt(31,666,"Linh thạch: %d" % money,14,GOLD_LIGHT)
+    txt(31,689,"EXP: %d / 250     SM: 100" % exp_points,13,CREAM)
+    panel(Rect2(952,647,313,58),Color(0.035,0.073,0.078,0.79))
+    txt(965,671,"A/D: Đi  ·  Space: Nhảy  ·  Shift: Chạy",12,CREAM)
+    txt(965,690,"E: NPC  ·  J: Kiếm  ·  I: Hồ sơ",12,CREAM)
+    if dialog_timer==0.0:
+        for npc in npcs:
+            if abs(float(npc["x"])-px)<100.0:
+                txt(500,456,"[E] Trò chuyện: %s" % npc["name"],17,Color("fff1bf"))
+                break
 
 func draw_intro() -> void:
 	draw_rect(Rect2(0,0,WIDTH,HEIGHT),Color(0.04,0.1,0.14,0.50))
@@ -516,7 +568,7 @@ func draw_intro() -> void:
 	txt(355,335,"Một thư quán cổ. Một thôn làng bình dị. Một con đường nghịch thiên.",17,CREAM)
 	txt(365,378,"Khám phá Thanh Khê, nhận nhiệm vụ, chiến đấu và bắt đầu tu luyện.",16,Color("cadbd3"))
 	txt(468,454,"[ ENTER ]  BẮT ĐẦU KHÁM PHÁ",24,Color("b5f6dc"))
-	txt(511,506,"Demo 0.1  •  Chơi đơn  •  Lưu tự động",14,Color("b5b5a7"))
+	txt(511,506,"Demo 0.3  •  Mỹ thuật tiên hiệp  •  Lưu tự động",14,Color("b5b5a7"))
 
 func draw_overlay() -> void:
 	panel(Rect2(290,172,700,380),Color(0.05,0.12,0.13,0.94))
