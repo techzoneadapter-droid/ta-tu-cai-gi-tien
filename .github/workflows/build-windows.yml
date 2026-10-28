@@ -22,7 +22,8 @@ jobs:
           test -s "$HOME/.local/share/godot/export_templates/4.6.stable/windows_release_x86_64.exe"
       - name: Unpack game art
         run: |
-          python3 -m zipfile -e visual_assets.zip .
+          command -v unzip || (apt-get update && apt-get install -y unzip)
+          unzip -o visual_assets.zip -d .
           test -s assets/thanh_khe_panorama.jpg
           test -s assets/player.png
       - name: Import and smoke test game
