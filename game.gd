@@ -279,8 +279,8 @@ func draw_art_atmosphere() -> void:
 	draw_rect(Rect2(0, 688, WIDTH, 32), Color(0.05,0.13,0.13,0.15))
 
 func draw_concept_character(x: float, foot: float, art: Texture2D, is_player: bool, title: String) -> void:
-	var bob := abs(sin(walk_phase))*3.0 if is_player and py >= FLOOR_Y else 0.0
-	var y := foot - bob
+	var bob: float = absf(sin(walk_phase))*3.0 if is_player and py >= FLOOR_Y else 0.0
+	var y: float = foot - bob
 	draw_ellipse_shadow(x, foot + 1, 29, 8)
 	var width := 87.0 if is_player else 77.0
 	var height := 177.0 if is_player else 153.0
