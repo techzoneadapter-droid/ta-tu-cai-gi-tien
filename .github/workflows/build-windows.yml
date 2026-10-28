@@ -57,10 +57,17 @@ jobs:
           dotnet publish launcher/ThanhKheLauncher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o dist/launcher
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (!(Test-Path 'dist/launcher/ThanhKhe_Launcher.exe')) { throw 'Launcher EXE missing' }
+      - name: Pack portable launcher ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/launcher/ThanhKhe_Launcher.exe -DestinationPath dist/ThanhKhe_Launcher_Windows.zip -Force
+          if (!(Test-Path dist/ThanhKhe_Launcher_Windows.zip)) { throw 'Launcher ZIP missing' }
       - uses: actions/upload-artifact@v4
         with:
           name: launcher-windows
-          path: dist/launcher/ThanhKhe_Launcher.exe
+          path: |
+            dist/launcher/ThanhKhe_Launcher.exe
+            dist/ThanhKhe_Launcher_Windows.zip
           if-no-files-found: error
 
   publish-release:
@@ -112,6 +119,7 @@ jobs:
             Tiến độ lưu của Godot được giữ khi cập nhật.
           files: |
             dist/ThanhKhe_Launcher.exe
+            dist/ThanhKhe_Launcher_Windows.zip
             dist/ThanhKhe_Game.exe
             dist/latest.json
           fail_on_unmatched_files: true

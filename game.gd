@@ -25,6 +25,7 @@ var vy := 0.0
 var face := 1
 var scroll_x := 0.0
 var walk_phase := 0.0
+var walking_now := false
 var world_time := 0.0
 var attack_timer := 0.0
 var attack_anim := 0.0
@@ -119,6 +120,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	world_time += delta
+	walking_now = false
 	dialog_timer = maxf(0.0, dialog_timer - delta)
 	attack_timer = maxf(0.0, attack_timer - delta)
 	attack_anim = maxf(0.0, attack_anim - delta)
@@ -128,6 +130,7 @@ func _process(delta: float) -> void:
 		if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT): axis -= 1.0
 		if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT): axis += 1.0
 		var pace := 310.0 if Input.is_key_pressed(KEY_SHIFT) else 205.0
+		walking_now = axis != 0.0
 		if axis != 0.0:
 			face = -1 if axis < 0 else 1
 			px = clampf(px + axis * pace * delta, 55.0, LAND_END - 55.0)
@@ -279,12 +282,22 @@ func draw_art_atmosphere() -> void:
 	draw_rect(Rect2(0, 688, WIDTH, 32), Color(0.05,0.13,0.13,0.15))
 
 func draw_concept_character(x: float, foot: float, art: Texture2D, is_player: bool, title: String) -> void:
-	var bob: float = absf(sin(walk_phase))*3.0 if is_player and py >= FLOOR_Y else 0.0
+	var on_foot: bool = is_player and walking_now and py >= FLOOR_Y
+	var bob: float = absf(sin(walk_phase)) * 4.3 if on_foot else 0.0
 	var y: float = foot - bob
-	draw_ellipse_shadow(x, foot + 1, 29, 8)
-	var width := 87.0 if is_player else 77.0
-	var height := 177.0 if is_player else 153.0
-	draw_texture_rect(art, Rect2(x-width*.5, y-height, width, height), false)
+	draw_ellipse_shadow(x, foot + 1.0, 29, 8)
+	var width: float = 87.0 if is_player else 77.0
+	var height: float = 177.0 if is_player else 153.0
+	# A subtle idle breath, step bob, and facing direction make painted cut-outs
+	# feel alive while the proper frame-by-frame sprite animation is prepared.
+	var breath: float = 1.0 + sin(world_time * 2.3 + x * 0.006) * 0.010
+	var tilt: float = sin(walk_phase) * 0.027 if on_foot else 0.0
+	var horizontal_flip: float = float(face) if is_player else 1.0
+	draw_set_transform(Vector2(x - scroll_x, y), tilt, Vector2(horizontal_flip, breath))
+	draw_texture_rect(art, Rect2(-width * 0.5, -height, width, height), false)
+	draw_set_transform(Vector2(-scroll_x, 0.0))
+	if on_foot and absf(sin(walk_phase * 1.5)) > 0.88:
+		draw_circle(Vector2(x, foot - 3.0), 2.4, Color(0.91, 0.86, 0.73, 0.45))
 	if is_player:
 		# Motion cue and a luminous sword stroke retain the existing combat feedback.
 		if attack_anim > 0.0:
