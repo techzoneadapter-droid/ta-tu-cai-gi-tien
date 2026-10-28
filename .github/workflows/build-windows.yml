@@ -16,6 +16,11 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+      - name: Install export templates from image
+        run: |
+          mkdir -p "$HOME/.local/share/godot/export_templates"
+          cp -a /root/.local/share/godot/export_templates/4.6.stable "$HOME/.local/share/godot/export_templates/"
+          test -s "$HOME/.local/share/godot/export_templates/4.6.stable/windows_release_x86_64.exe"
       - name: Import project
         run: godot --headless --path . --editor --import --quit
       - name: Export single-file Windows executable
