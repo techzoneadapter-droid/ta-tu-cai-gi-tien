@@ -1,0 +1,62 @@
+name: Import Source of Mana into isolated folder
+
+on:
+  push:
+    branches:
+      - import/source-of-mana
+    paths:
+      - .github/workflows/import-source-of-mana.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    name: Copy complete Source of Mana working tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout project branch
+        uses: actions/checkout@v4
+        with:
+          ref: import/source-of-mana
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Clone and import upstream project
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -e source-of-mana ]; then
+            echo "::error::source-of-mana/ already exists. Refusing to overwrite it."
+            exit 1
+          fi
+          WORK_DIR="$(mktemp -d)"
+          git clone --depth 1 --branch master --single-branch https://github.com/sourceofmana/sourceofmana.git "$WORK_DIR/upstream"
+          SOURCE_SHA="$(git -C "$WORK_DIR/upstream" rev-parse HEAD)"
+          SOURCE_FILES="$(git -C "$WORK_DIR/upstream" ls-files | wc -l)"
+          mkdir -p source-of-mana
+          rsync -a --exclude='/.git/' "$WORK_DIR/upstream/" source-of-mana/
+          printf '%s\n' "$SOURCE_SHA" > source-of-mana/UPSTREAM_COMMIT.txt
+          test -f source-of-mana/project.godot
+          test -f source-of-mana/LICENSE.md
+          test -f source-of-mana/CC\ BY-SA\ 4.0
+          git add -f -A -- source-of-mana
+          IMPORTED_FILES="$(git ls-files -- source-of-mana/ | wc -l)"
+          echo "Source files: $SOURCE_FILES"
+          echo "Imported files including version note: $IMPORTED_FILES"
+          if [ "$IMPORTED_FILES" -ne "$((SOURCE_FILES + 1))" ]; then
+            echo "::error::Imported file count does not match source."
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Import complete Source of Mana source at $SOURCE_SHA"
+          git push origin HEAD:refs/heads/import/source-of-mana
+
+      - name: Record import result
+        if: success()
+        run: |
+          echo "Imported Source of Mana to \`source-of-mana/\` on \`import/source-of-mana\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "The existing Thanh Khe game in the repository root was preserved." >> "$GITHUB_STEP_SUMMARY"
