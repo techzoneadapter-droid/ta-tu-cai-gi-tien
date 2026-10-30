@@ -1,0 +1,21 @@
+*.DS_Store
+android/*
+binary/*
+build/*
+publishing/*
+
+# imported files
+.godot/*
+presets/maps/*
+
+# addons
+~*.dll
+
+# linux env
+.mono
+
+.vscode
+
+# tmp files
+*.tmp
+__pycache__/

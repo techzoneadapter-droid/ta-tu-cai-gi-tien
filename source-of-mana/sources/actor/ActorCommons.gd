@@ -1,0 +1,483 @@
+extends RefCounted
+class_name ActorCommons
+
+# Actor enums
+enum Type
+{
+	UNKNOWN = -1,
+	PLAYER = 0,
+	MONSTER,
+	NPC
+}
+
+enum Permission
+{
+	NONE = 0,
+	MODERATOR,
+	GM,
+	ADMIN
+}
+
+enum Gender
+{
+	MALE = 0,
+	FEMALE,
+	NONBINARY,
+	COUNT
+}
+
+const genderMale : String				= "Male"
+const genderFemale : String				= "Female"
+const genderNonBinary : String			= "Non Binary"
+
+static func GetGenderName(gender : Gender) -> String:
+	match gender:
+		Gender.MALE:			return genderMale
+		Gender.FEMALE:			return genderFemale
+		Gender.NONBINARY:		return genderNonBinary
+		_:						return genderNonBinary
+
+static func GetGenderID(gender : String) -> Gender:
+	match gender:
+		genderMale:					return Gender.MALE
+		genderFemale:				return Gender.FEMALE
+		genderNonBinary:			return Gender.NONBINARY
+		_:							return Gender.MALE
+
+enum Slot
+{
+	NONE = -1,
+	CHEST = 0,
+	LEGS,
+	FEET,
+	HANDS,
+	HEAD,
+	NECK,
+	WEAPON,
+	SHIELD,
+	BODY,
+	FACE,
+	HAIR,
+	QUEST,
+	COUNT,
+	FIRST_EQUIPMENT = CHEST,
+	LAST_EQUIPMENT = SHIELD + 1,
+	FIRST_MODIFIER = BODY,
+	LAST_MODIFIER = HAIR + 1,
+}
+
+enum Attribute
+{
+	STRENGTH = 0,
+	VITALITY,
+	AGILITY,
+	ENDURANCE,
+	CONCENTRATION,
+}
+
+static func CheckTraits(traits : Dictionary) -> bool:
+	if "hairstyle" not in traits or not DB.GetHairstyle(traits["hairstyle"]):
+		return false
+	if "haircolor" not in traits or not DB.GetPalette(DB.Palette.HAIR, traits["haircolor"]):
+		return false
+	if "race" not in traits:
+		return false
+	var race : RaceData = DB.GetRace(traits["race"])
+	if not race or "skintone" not in traits or not race.HasSkin(traits["skintone"]):
+		return false
+	if "gender" not in traits:
+		return false
+	return true
+
+static func CheckAttributes(attributes : Dictionary) -> bool:
+	return (attributes.get("strength", 0) + attributes.get("vitality", 0) + attributes.get("agility", 0) + attributes.get("endurance", 0) + attributes.get("concentration", 0)) <= Formula.GetMaxAttributePoints(1)
+
+enum Target
+{
+	NONE = 0,
+	ALLY,
+	ENEMY
+}
+
+const playbackParameter : String = "parameters/playback"
+
+# Direction
+enum Direction
+{
+	UNKNOWN = -1,
+	DOWN,
+	DOWNLEFT,
+	LEFT,
+	UPLEFT,
+	UP,
+	UPRIGHT,
+	RIGHT,
+	DOWNRIGHT
+}
+
+static func GetRandomDirection() -> Vector2:
+	return Vector2(randf_range(-1.0, 1.0), randf_range(-0.3, 1.0))
+
+static func GetDirectionFromEnum(dir : Direction) -> Vector2:
+	match dir:
+		Direction.DOWN:			return Vector2(0.0, 1.0)
+		Direction.DOWNLEFT:		return Vector2(-1.0, 1.0)
+		Direction.LEFT:			return Vector2(-1.0, 0.0)
+		Direction.UPLEFT:		return Vector2(-1.0, -1.0)
+		Direction.UP:			return Vector2(0.0, -1.0)
+		Direction.UPRIGHT:		return Vector2(1.0, -1.0)
+		Direction.RIGHT:		return Vector2(1.0, 0.0)
+		Direction.DOWNRIGHT:	return Vector2(1.0, 1.0)
+		_:						return GetRandomDirection()
+
+# State
+enum State
+{
+	UNKNOWN = -1,
+	IDLE = 0,
+	WALK,
+	SIT,
+	ATTACK,
+	DEATH,
+	TO_TRIGGER,
+	TRIGGER,
+	FROM_TRIGGER,
+	COUNT
+}
+
+static var STATE_TRANSITIONS : PackedByteArray = [
+# IDLE
+	State.IDLE,    State.WALK,      State.SIT,      State.ATTACK,   State.DEATH,    State.IDLE,         State.TRIGGER,  State.IDLE,
+# WALK
+	State.IDLE,    State.WALK,      State.WALK,     State.ATTACK,   State.DEATH,    State.IDLE,         State.TRIGGER,  State.IDLE,
+# SIT
+	State.SIT,     State.WALK,      State.IDLE,     State.ATTACK,   State.DEATH,    State.IDLE,         State.TRIGGER,  State.IDLE,
+# ATTACK
+	State.IDLE,    State.WALK,      State.ATTACK,   State.ATTACK,   State.DEATH,    State.IDLE,         State.TRIGGER,  State.IDLE,
+# DEATH
+	State.DEATH,   State.DEATH,     State.DEATH,    State.DEATH,    State.DEATH,    State.DEATH,        State.DEATH,    State.DEATH,
+# TO_TRIGGER
+	State.IDLE,    State.WALK,      State.SIT,      State.ATTACK,   State.DEATH,    State.TO_TRIGGER,   State.TRIGGER,  State.FROM_TRIGGER,
+# TRIGGER
+	State.TRIGGER, State.TRIGGER,   State.SIT,      State.ATTACK,   State.DEATH,    State.TRIGGER,      State.IDLE,     State.TRIGGER,
+# FROM_TRIGGER
+	State.IDLE,    State.WALK,      State.SIT,      State.ATTACK,   State.DEATH,    State.IDLE,         State.TRIGGER,  State.FROM_TRIGGER
+]
+
+const STATE_NAMES : PackedStringArray = [
+	"Idle",
+	"Walk",
+	"Sit",
+	"Attack",
+	"Death",
+	"To Trigger",
+	"Trigger",
+	"From Trigger",
+]
+
+static func GetStateName(state : State) -> String:
+	if state <= State.UNKNOWN or state >= State.COUNT:
+		return ""
+	return STATE_NAMES[state]
+
+static func IsAlive(actor : Actor) -> bool:
+	return actor and actor.state != State.DEATH and actor.stat.health > 0
+
+static func IsAttacking(actor : Actor) -> bool:
+	return actor and actor.state == State.ATTACK
+
+static func IsSitting(actor : Actor) -> bool:
+	return actor and actor.state == State.SIT
+
+static func IsWalking(actor : Actor) -> bool:
+	return actor and actor.state == State.WALK
+
+static func IsRunning(actor : Actor) -> bool:
+	return IsWalking(actor) and actor.stat.isRunning
+
+static func IsTriggering(actor : Actor) -> bool:
+	return actor and actor.state == State.TRIGGER
+
+static func IsHiddenFromMobs(actor : Actor) -> bool:
+	return actor and actor.stat and (actor.stat.isHidden or actor.stat.isInvisible)
+
+static func IsInvisibleToPlayers(actor : Actor) -> bool:
+	return actor and actor.stat and actor.stat.isInvisible
+
+#
+const slotChest : String					= "Chest"
+const slotLegs : String						= "Legs"
+const slotFeet : String						= "Feet"
+const slotHands : String					= "Hands"
+const slotHead : String						= "Head"
+const slotNeck : String						= "Neck"
+const slotWeapon : String					= "Weapon"
+const slotShield : String					= "Shield"
+const slotBody : String						= "Body"
+const slotFace : String						= "Face"
+const slotHair : String						= "Hair"
+const slotQuest : String					= "Quest"
+
+static func GetSlotName(slot : Slot) -> String:
+	match slot:
+		Slot.CHEST:				return slotChest
+		Slot.LEGS:				return slotLegs
+		Slot.FEET:				return slotFeet
+		Slot.HANDS:				return slotHands
+		Slot.HEAD:				return slotHead
+		Slot.NECK:				return slotNeck
+		Slot.WEAPON:			return slotWeapon
+		Slot.SHIELD:			return slotShield
+		Slot.BODY:				return slotBody
+		Slot.FACE:				return slotFace
+		Slot.HAIR:				return slotHair
+		Slot.QUEST:				return slotQuest
+		_:						return slotBody
+
+const SlotEquipmentCount : int				= ActorCommons.Slot.LAST_EQUIPMENT - ActorCommons.Slot.FIRST_EQUIPMENT
+const SlotModifierCount : int				= ActorCommons.Slot.LAST_MODIFIER - ActorCommons.Slot.FIRST_MODIFIER
+
+static func GetSlotID(slot : String) -> Slot:
+	match slot:
+		slotChest:					return Slot.CHEST
+		slotLegs:					return Slot.LEGS
+		slotFeet:					return Slot.FEET
+		slotHands:					return Slot.HANDS
+		slotHead:					return Slot.HEAD
+		slotNeck:					return Slot.NECK
+		slotWeapon:					return Slot.WEAPON
+		slotShield:					return Slot.SHIELD
+		slotBody:					return Slot.BODY
+		slotFace:					return Slot.FACE
+		slotHair:					return Slot.HAIR
+		slotQuest:					return Slot.QUEST
+		_:							return Slot.BODY
+
+# Navigation
+const NPAgentScene : PackedScene			= preload(Path.EntityComponent + "navigations/NPAgent.tscn")
+const PlayerAgentScene : PackedScene		= preload(Path.EntityComponent + "navigations/PlayerAgent.tscn")
+
+# Visual
+const AllyTarget : Resource 				= preload("res://presets/entities/components/targets/Ally.tres")
+const EnemyTarget : Resource				= preload("res://presets/entities/components/targets/Enemy.tres")
+const AlterationLabel : PackedScene			= preload("res://presets/gui/AlterationLabel.tscn")
+const SpeechLabel : PackedScene				= preload("res://presets/gui/chat/SpeechBubble.tscn")
+const MorphFx : PackedScene					= preload("res://presets/effects/particles/Morph.tscn")
+const LevelUpFx : PackedScene				= preload("res://presets/effects/particles/LevelUp.tscn")
+const SelectionFx : PackedScene				= preload("res://presets/effects/particles/Selection.tscn")
+
+const GenderMaleTexture : Texture2D			= preload("res://data/graphics/gui/stat/gender-male.png")
+const GenderFemaleTexture : Texture2D		= preload("res://data/graphics/gui/stat/gender-female.png")
+const GenderNonBinaryTexture : Texture2D	= preload("res://data/graphics/gui/stat/gender-nonbinary.png")
+
+const LastMeanValueMax : int				= 5
+const VisibilityCheckTimeInternal : float	= 1.0
+const VisibilityCheckDistSqrd : float		= 16.0 * 16.0
+static var PlayerEntityID : int				= "Player".hash()
+
+# Skill
+enum Alteration
+{
+	UNKNOWN = -1,
+	HIT = 0,
+	CRIT,
+	MISS,
+	DODGE,
+	HEAL,
+	EXP,
+	GP,
+	LVL_UP,
+	SKILL_UP,
+	QUEST_COMPLETE,
+	QUEST_UPDATE,
+	WHISPER
+}
+
+# Colors
+const DodgeAttackColor : float				= 0.15
+const HealColor : float						= 0.42
+const LocalAttackColor : float				= 0.35
+const MissAttackColor : float				= 0.2
+const ExpColor : float						= 0.44
+const GPColor : float						= 0.16
+const MonsterColor : float					= 0.03
+const PlayerColor : float					= 0.53
+const LevelDifferenceColor : float			= 5.0
+const NPCTextColor : Color					= Color.LIGHT_BLUE
+const MonsterTextColor : Color				= Color.DARK_SALMON
+
+# Sfx
+const SfxMaxDistance : float				= 500.0
+const MasterBus : StringName				= &"Master"
+const MusicBus : StringName					= &"Music"
+const SfxAlterationBus : StringName			= &"Alteration SFX"
+const SfxNotificationBus : StringName		= &"Notification SFX"
+const SfxStateBus : StringName				= &"State SFX"
+const NotificationAlterations : Array[Alteration] = [Alteration.LVL_UP, Alteration.SKILL_UP, Alteration.QUEST_COMPLETE, Alteration.QUEST_UPDATE, Alteration.WHISPER]
+
+static func IsNotificationAlteration(alteration : Alteration) -> bool:
+	return alteration in NotificationAlterations
+
+# Interactive
+const interactionDisplayOffset : int		= 32
+const minVisualOffset : int					= 20
+const selectionRadius : int					= 24
+const targetRadius : int					= 12
+const emoteDelay : float					= 4.0
+const morphDelay : float					= 1.2
+const speechDelay : float					= 6.0
+const speechDecreaseDelay : float			= 1.5
+const speechIncreaseThreshold : int			= 15
+const speechMaxWidth : int					= 256
+const speechExtraWidth : int				= 20
+const speechGroupXThreshold : int			= 150
+const speechGroupYThreshold : int			= 60
+const speechStackGap : int					= 4
+const speechGroupTweenDuration : float		= 0.15
+const TargetMaxDistance : int				= 256 # 8 Tile length
+const TargetWalkToDistance : int			= 192 # 6 Tile length
+static var TargetMaxSquaredDistance : float	= TargetMaxDistance * TargetMaxDistance
+
+# Distance
+static func IsSameActor(actor : Actor, target : Actor) -> bool:
+	return actor == target
+
+static func GetRecovery(actor : Actor) -> Recovery:
+	if IsAttacking(actor) or IsRunning(actor):
+		return Recovery.NONE
+	if IsWalking(actor):
+		return Recovery.POOR
+	if IsSitting(actor):
+		return Recovery.GOOD
+	return Recovery.NORMAL
+
+static func GetRecoveryRatio(recovery : Recovery, regen : int) -> float:
+	return RecoveryMalusRatio[recovery] if regen < 0 else RecoveryBonusRatio[recovery]
+
+static func GetSkillRange(actor : Actor, skill : SkillCell) -> int:
+	return actor.stat.current.attackRange + (skill.skillRange if skill else 0)
+
+static func GetDistanceSquared(actor : Actor, pos : Vector2) -> float:
+	return Vector2.ZERO.distance_squared_to((actor.position - pos) * SkillCommons.PerspectiveIncrease)
+
+static func IsActorNear(entity : Actor, target : Actor, skillRange : int) -> bool:
+	var filteredRange : float = skillRange + entity.data._radius + target.data._radius
+	return Util.IsReachableSquared(entity.position, target.position, filteredRange * filteredRange)
+
+# Lifetime
+const AttackTimestampLimit : int			= 1000 * 60 * 5 # 5 minutes
+const RegenDelay : float					= 3.0
+const RegenTickInterval : float				= 0.5
+
+enum Recovery
+{
+	NONE = 0,
+	POOR,
+	NORMAL,
+	GOOD,
+	COUNT
+}
+const RecoveryBonusRatio : PackedFloat32Array	= [0.0, 0.5, 1.0, 2.0]
+const RecoveryMalusRatio : PackedFloat32Array	= [2.0, 1.5, 1.0, 0.0]
+const DeathDelay : float					= 10.0
+const DisplayHPDelay : float				= 7.0
+const MapProcessingToggleDelay : float		= 10.0
+const MapProcessingToggleExtraDelay : float	= 60.0
+
+# Drop
+const DropDelay : float						= 60.0
+const PickupSquaredDistance : float			= 48 * 48 # 1.5 Tile squared length
+
+# Trade
+const TradeMaxItems : int					= 20
+const TradeRequestTimeoutMs : int			= 30 * 1000
+const MerchantMaxItemCount : int			= 999999
+
+# Stats
+const MaxStatValue : int					= 1 << 32
+const MaxPointPerAttributes : int			= 20
+const InventorySize : int					= 100
+const RunningStaminaCostPerSecond : int		= 5
+
+# Explore
+static var SailingDestination : Destination	= Destination.new("Ocean".hash(), Vector2(71 * 32 + 16, 55 * 32 + 16))
+
+# Navigation
+const MaxEntityRadiusSize : int				= 256
+const DisplacementVector : Vector2			= Vector2(32, 32)
+const MismatchPathSquaredThreshold : float	= 32 * 32
+const MaxDisplacementSquareLength : float	= 64 * 64
+const InputApproximationUnit : int			= 16
+const MinVelocityThreshold : float			= 5
+static var InputApproximationDelta : float	= 360.0 / InputApproximationUnit
+
+# Camera
+const CameraZoomLevels : PackedVector2Array	= [
+	Vector2(0.6, 0.6),
+	Vector2(0.7, 0.7),
+	Vector2(0.85, 0.85),
+	Vector2(1.0, 1.0),
+	Vector2(1.2, 1.2),
+	Vector2(1.5, 1.5),
+	Vector2(2.0, 2.0),
+	Vector2(3.0, 3.0),
+]
+const CameraZoomMin : int					= 0
+const CameraZoomDefault : int				= 3
+const CameraZoomDouble : int				= 6
+const CameraZoomTriple : int				= 7
+static var CameraZoomMax : int				= CameraZoomLevels.size()
+const CameraZoomDelay : float				= 0.4
+
+# Character
+const InvalidCharacterSlot : int			= -1
+const MaxCharacterCount : int				= 10
+static var CharacterScreenMapID : int		= "Drazil".hash()
+const CharacterScreenLocations : PackedVector2Array = [
+	Vector2(1984, 992),
+	Vector2(2144, 960),
+	Vector2(2240, 896),
+	Vector2(2240, 768),
+	Vector2(2144, 704),
+	Vector2(2048, 736),
+	Vector2(1856, 672),
+	Vector2(1728, 768),
+	Vector2(1760, 896),
+	Vector2(1856, 960),
+	Vector2(2048, 928)
+]
+
+# New player
+static var DefaultTraits : Dictionary = {
+	"shape": "Player".hash(),
+	"spirit": "Piou".hash()
+}
+static var DefaultAttributes : Dictionary = {
+	"strength": 1,
+	"vitality": 1,
+	"agility": 1,
+	"endurance": 1,
+	"concentration": 1,
+}
+static var DefaultStats : Dictionary = {
+	"level": 1,
+}
+static var DefaultInventory : Array[Dictionary] = [
+]
+static var DefaultSkills : Array[Dictionary] = [
+	{ "skill_id": SkillCommons.SkillMeleeName.hash(), "level": 1 },
+	{ "skill_id": SkillCommons.SkillRunName.hash(), "level": 1 },
+]
+static var DefaultSfx : Dictionary[ActorCommons.Alteration, AudioStream] = {
+	Alteration.HIT:				preload("res://data/sounds/alteration/hit.ogg"),
+	Alteration.CRIT:			preload("res://data/sounds/alteration/crit.ogg"),
+	Alteration.DODGE:			preload("res://data/sounds/alteration/dodge.ogg"),
+	Alteration.HEAL:			preload("res://data/sounds/alteration/heal.ogg"),
+	Alteration.EXP:				preload("res://data/sounds/alteration/exp.ogg"),
+	Alteration.GP:				preload("res://data/sounds/alteration/gp.ogg"),
+	Alteration.LVL_UP:			preload("res://data/sounds/alteration/levelup.ogg"),
+	Alteration.SKILL_UP:		preload("res://data/sounds/alteration/skillup.ogg"),
+	Alteration.QUEST_COMPLETE:	preload("res://data/sounds/alteration/quest-done.ogg"),
+	Alteration.QUEST_UPDATE:	preload("res://data/sounds/alteration/quest-update.ogg"),
+	Alteration.WHISPER:			preload("res://data/sounds/alteration/quest-update.ogg"),
+}

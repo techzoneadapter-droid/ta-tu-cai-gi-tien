@@ -1,0 +1,373 @@
+extends ColorRect
+class_name CellTile
+
+@export var draggable : bool			= false
+@export var defaultIcon : CompressedTexture2D = null
+@onready var icon : TextureRect			= $Icon
+@onready var countLabel : Label			= $Count
+@onready var cooldownLabel : Label		= $Cooldown
+
+var cell : BaseCell						= null
+var defaultMaterial : Material			= null
+var selection : TextureRect				= null
+var cooldownTimer : float				= -INF
+var shineTimer : float					= -INF
+var count : int							= 0
+var itemIndex : int						= -1
+var hovered : bool						= false
+var equipped : bool						= false
+var isInteractive : bool				= true
+
+const modulateDisable : float			= 0.5
+
+signal selected
+
+# Private
+func GetTooltipModifierLine(modifier : StatModifier, currentEquipped : ItemCell, lightColor : String) -> String:
+	var modStr : String = "\n%s: [color=%s]%s[/color]" % [CellCommons.GetModifierDisplayName(modifier._effect), lightColor, CellCommons.FormatModifierValue(modifier._effect, modifier._value)]
+	if IsInEquipmentSlot() and not CellCommons.IsSameCell(cell, currentEquipped):
+		var currentVal : Variant = 0
+		if currentEquipped and currentEquipped.modifiers:
+			currentVal = currentEquipped.modifiers.Get(modifier._effect, true)
+		modStr += CellCommons.GetModifierDiffBBCode(modifier._effect, modifier._value - currentVal)
+	return modStr
+
+func GetTooltipMissingModifiers(currentEquipped : ItemCell, lightColor : String) -> String:
+	if not (currentEquipped and currentEquipped.modifiers and not CellCommons.IsSameCell(cell, currentEquipped)):
+		return ""
+	var bbcode : String = ""
+	for modifier in currentEquipped.modifiers._modifiers:
+		if modifier and modifier._persistent:
+			if not cell.modifiers or cell.modifiers.Get(modifier._effect, true) == 0:
+				bbcode += "\n%s: [color=%s]0[/color]%s" % [CellCommons.GetModifierDisplayName(modifier._effect), lightColor, CellCommons.GetModifierDiffBBCode(modifier._effect, -modifier._value)]
+	return bbcode
+
+func IsInEquipmentSlot() -> bool:
+	return cell is ItemCell and cell.slot >= ActorCommons.Slot.FIRST_EQUIPMENT and cell.slot < ActorCommons.Slot.LAST_EQUIPMENT
+
+func GetCurrentEquipped() -> ItemCell:
+	if not (IsInEquipmentSlot() and Launcher.Player and Launcher.Player.inventory):
+		return null
+	return Launcher.Player.inventory.GetEquipmentCell(cell.slot)
+
+func GetTooltipModifiers(currentEquipped : ItemCell) -> String:
+	if not (cell is ItemCell):
+		return ""
+	var lightColor : String = "#" + UICommons.LightTextColor.to_html(false)
+	var bbcode : String = ""
+	if cell.modifiers and cell.modifiers.HasAny():
+		for modifier in cell.modifiers._modifiers:
+			if modifier and (modifier._persistent or cell.usable):
+				if bbcode.is_empty():
+					bbcode += "\n"
+				bbcode += GetTooltipModifierLine(modifier, currentEquipped, lightColor)
+	bbcode += GetTooltipMissingModifiers(currentEquipped, lightColor)
+	return bbcode
+
+func IsSkillCost(modifier : StatModifier) -> bool:
+	return not modifier._persistent and CellCommons.IsResourceModifier(modifier._effect) and float(modifier._value) < 0.0
+
+func GetTooltipSkillModifierLine(modifier : StatModifier, lightColor : String) -> String:
+	var value : String = CellCommons.FormatModifierValue(modifier._effect, modifier._value)
+	if IsSkillCost(modifier):
+		value = CellCommons.FormatModifierValue(modifier._effect, -float(modifier._value)).trim_prefix("+")
+	return "\n  %s: [color=%s]%s[/color]" % [CellCommons.GetModifierDisplayName(modifier._effect), lightColor, value]
+
+func GetTooltipSection(header : String, lines : String) -> String:
+	return "" if lines.is_empty() else "\n" + header + lines
+
+func GetTooltipSkillModifiers() -> String:
+	if not (cell is SkillCell and cell.modifiers):
+		return ""
+
+	var lightColor : String = "#" + UICommons.LightTextColor.to_html(false)
+	var effects : String = ""
+	var buffs : String = ""
+	var costs : String = ""
+	for modifier in cell.modifiers._modifiers:
+		if modifier:
+			var line : String = GetTooltipSkillModifierLine(modifier, lightColor)
+			if modifier._persistent:
+				buffs += line
+			elif IsSkillCost(modifier):
+				costs += line
+			else:
+				effects += line
+
+	var buffHeader : String = "Buff (%s)" % Util.FormatDuration(int(cell.buffTime)) if cell.buffTime > 0.0 else "Buff"
+	var bbcode : String = GetTooltipSection("Effect", effects) + GetTooltipSection(buffHeader, buffs) + GetTooltipSection("Cost", costs)
+	return "" if bbcode.is_empty() else "\n" + bbcode
+
+func GetTooltipWeight() -> String:
+	if cell.weight == 0:
+		return ""
+	var lightColor : String = "#" + UICommons.LightTextColor.to_html(false)
+	return "\n\nWeight: [color=%s]%dg[/color]" % [lightColor, cell.weight]
+
+func GetTooltipHeader() -> String:
+	var bbcode : String = cell.name
+	var lightColor : String = "#" + UICommons.LightTextColor.to_html(false)
+	if cell is ItemCell and not cell.customfield.is_empty():
+		bbcode += " (%s)" % cell.customfield
+	if cell.description:
+		bbcode += "\n[color=%s]%s[/color]" % [lightColor, cell.description]
+	if cell is SkillCell and Launcher.Player and Launcher.Player.progress:
+		bbcode += "\nLevel: [color=%s]%d[/color]" % [lightColor, Launcher.Player.progress.GetSkillLevel(cell)]
+	return bbcode
+
+func SetToolTip():
+	var bbcode : String = ""
+	if cell:
+		var currentEquipped : ItemCell = GetCurrentEquipped()
+		bbcode = GetTooltipHeader()
+		bbcode += GetTooltipModifiers(currentEquipped)
+		bbcode += GetTooltipSkillModifiers()
+		bbcode += GetTooltipWeight()
+	set_tooltip_text(bbcode)
+	if Launcher.GUI and Launcher.GUI.cellDetails and Launcher.GUI.cellDetails.tile == self:
+		Launcher.GUI.cellDetails.Refresh()
+
+static func ClampTooltipWidth(label : RichTextLabel):
+	if label.get_content_width() > UICommons.TooltipMaxWidth:
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.custom_minimum_size.x = UICommons.TooltipMaxWidth
+
+static func MakeTooltipLabel(text : String) -> RichTextLabel:
+	var label : RichTextLabel = RichTextLabel.new()
+	label.bbcode_enabled = true
+	label.fit_content = true
+	label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	label.add_theme_color_override("default_color", UICommons.TextColor)
+	label.text = text
+	label.tree_entered.connect(ClampTooltipWidth.bind(label))
+	return label
+
+func _make_custom_tooltip(for_text : String) -> Object:
+	return null if for_text.is_empty() else MakeTooltipLabel(for_text)
+
+func IsInspectable() -> bool:
+	return LauncherCommons.isMobile and cell != null and UICommons.GetWindowPanelAncestor(self) != null
+
+func ToggleInfo():
+	if Launcher.GUI and Launcher.GUI.cellDetails and IsInspectable():
+		Launcher.GUI.cellDetails.Toggle(self)
+
+func UpdateCountLabel():
+	if countLabel:
+		if not defaultIcon and equipped:
+			countLabel.text = "~"
+		elif count >= 1000:
+			countLabel.text = "999+"
+		elif count <= 1:
+			countLabel.text = ""
+		else:
+			countLabel.text = str(count)
+	if icon:
+		var modColor : Color = Color.BLACK if count <= 0 else Color.WHITE
+		modColor.a = modulateDisable if count <= 0 else 1.0
+		icon.material.set_shader_parameter("modulate", modColor)
+
+# Public
+func AssignData(newCell : BaseCell, newCount : int = 1):
+	if cell != newCell:
+		if cell:
+			UnassignData(cell)
+		if newCell:
+			newCell.used.connect(Used)
+	cell = newCell
+	count = newCount
+	UpdateData()
+
+func UnassignData(sourceCell : BaseCell):
+	if icon:
+		icon.material.set_shader_parameter("progress", -INF)
+		icon.material.set_shader_parameter("modulate", Color.WHITE)
+		icon.set_texture(defaultIcon)
+	if sourceCell:
+		if sourceCell.used.is_connected(Used):
+			sourceCell.used.disconnect(Used)
+
+func UpdateData():
+	if icon:
+		icon.set_texture(cell.icon if cell else defaultIcon)
+		if cell and cell is ItemCell and cell.shader != null:
+			icon.set_material(cell.shader)
+		else:
+			icon.set_material(defaultMaterial)
+
+	UpdateCountLabel()
+	SetToolTip()
+	RefreshColor()
+	if not draggable and not defaultIcon:
+		set_visible(count > 0 and cell != null)
+
+func AddSelection():
+	if not selection:
+		selection = UICommons.CellSelectionPreset.instantiate()
+		add_child.call_deferred(selection)
+
+func RemoveSelection():
+	if selection:
+		remove_child.call_deferred(selection)
+		selection.queue_free()
+		selection = null
+
+static func RefreshShortcuts(baseCell : BaseCell, newCount : int = -1):
+	if baseCell == null or Launcher.GUI == null:
+		return
+
+	if newCount < 0 and Launcher.Player:
+		match baseCell.type:
+			CellCommons.Type.SKILL:
+				var skillCell : SkillCell = baseCell as SkillCell
+				newCount = 1 if skillCell and Launcher.Player.progress and Launcher.Player.progress.HasSkill(skillCell) else 0
+			CellCommons.Type.EMOTE:
+				newCount = 1
+			CellCommons.Type.ITEM:
+				if Launcher.Player.inventory:
+					for item in Launcher.Player.inventory.items:
+						if item and CellCommons.IsSameItem(baseCell, item):
+							newCount = item.count
+							break
+
+	for shortcutTile in Launcher.GUI.shortcutTiles:
+		if shortcutTile.is_visible() and shortcutTile.cell == baseCell:
+			shortcutTile.count = newCount
+			shortcutTile.equipped = CellCommons.IsEquipped(baseCell)
+			shortcutTile.UpdateCountLabel()
+
+func UseCell():
+	if cell and isInteractive:
+		if cell is ItemCell and Launcher.GUI.tradePanel.IsTrading() and UICommons.GetWindowPanelAncestor(self) == Launcher.GUI.inventoryWindow:
+			if not equipped and cell.slot != ActorCommons.Slot.QUEST:
+				Launcher.GUI.tradePanel.OpenPicker(cell, 1)
+		elif cell is ItemCell and not cell.usable and IsInEquipmentSlot():
+			if equipped:
+				Network.UnequipItem(cell.id, cell.customfield)
+			else:
+				Network.EquipItem(cell.id, cell.customfield, itemIndex)
+		else:
+			cell.Use()
+
+func Hover(isHovering : bool):
+	hovered = isHovering
+	RefreshColor()
+	if cell:
+		cell.Hover(isHovering)
+
+func Used(cooldown : float = 0.0):
+	cooldownTimer = cooldown
+	set_process(true)
+
+func ClearCooldown():
+	cooldownTimer = -INF
+	cooldownLabel.text = ""
+	UpdateCountLabel()
+	if count > 0:
+		shineTimer = 1.0
+
+# Drag
+func _get_drag_data(_position : Vector2):
+	if cell and isInteractive:
+		if cell.usable or IsInEquipmentSlot():
+			if icon:
+				set_drag_preview(icon.duplicate())
+			return self
+	return null
+
+func _can_drop_data(_at_position : Vector2, data):
+	if not data is CellTile:
+		return false
+	if draggable and data.cell is BaseCell and data.cell != cell and data.cell.usable:
+		return true
+	if defaultIcon and data.cell is ItemCell and data.cell.slot == _get_equipment_slot() and not CellCommons.IsEquipped(data.cell):
+		return true
+	if not draggable and not defaultIcon and data.cell is ItemCell and CellCommons.IsEquipped(data.cell):
+		return true
+	return false
+
+func _drop_data(_at_position : Vector2, data):
+	if defaultIcon and data.cell is ItemCell and data.cell.slot == _get_equipment_slot():
+		Network.EquipItem(data.cell.id, data.cell.customfield, data.itemIndex)
+	elif not draggable and not defaultIcon and data.cell is ItemCell and CellCommons.IsEquipped(data.cell):
+		Network.UnequipItem(data.cell.id, data.cell.customfield)
+	elif draggable:
+		AssignData(data.cell)
+		CellTile.RefreshShortcuts(data.cell)
+
+func _get_equipment_slot() -> ActorCommons.Slot:
+	if defaultIcon:
+		var slot : ActorCommons.Slot = ActorCommons.GetSlotID(name)
+		if slot >= ActorCommons.Slot.FIRST_EQUIPMENT and slot < ActorCommons.Slot.LAST_EQUIPMENT:
+			return slot
+	return ActorCommons.Slot.NONE
+
+# Default
+func _enter_tree():
+	if draggable and Launcher.GUI:
+		Launcher.GUI.shortcutTiles.append(self)
+
+func _exit_tree():
+	if draggable and Launcher.GUI:
+		Launcher.GUI.shortcutTiles.erase(self)
+
+func _ready():
+	defaultMaterial = icon.material if icon else null
+	UpdateData()
+	set_process(false)
+
+func _gui_input(event):
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.double_click:
+				UseCell()
+			elif event.pressed:
+				selected.emit(self)
+				ToggleInfo()
+		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed and draggable:
+			cell = null
+			count = 0
+			UpdateData()
+
+func _process(delta : float):
+	if cooldownTimer != -INF:
+		cooldownTimer -= delta
+		if cooldownTimer <= 0.0 or Launcher.Player == null:
+			ClearCooldown()
+		else:
+			if cell.type == CellCommons.Type.SKILL:
+				var cooldown : float = SkillCommons.GetCooldown(Launcher.Player, cell)
+				var cooldownRatio : float = cooldownTimer / cooldown if cooldown > cooldownTimer else 1.0
+				var modColor : Color = Color.GRAY.lerp(Color.BLACK, cooldownRatio)
+				modColor.a = modulateDisable + (cooldownRatio * (1.0 - modulateDisable))
+				icon.material.set_shader_parameter("modulate", modColor)
+				cooldownLabel.text = ("%.1f" if cooldownTimer < 10 else "%.0f") % [cooldownTimer]
+	elif shineTimer != -INF:
+		shineTimer -= delta
+		if shineTimer <= 0.0 or Launcher.Player == null:
+			shineTimer = -INF
+		icon.material.set_shader_parameter("progress", shineTimer)
+	else:
+		set_process(false)
+
+func RefreshColor():
+	var targetColor : Color
+	if hovered:
+		targetColor = UICommons.CellTileColorHovered
+	elif cell and equipped:
+		targetColor = UICommons.CellTileColorEquipped
+	else:
+		targetColor = UICommons.CellTileColorDefault
+	color = Color(targetColor.r, targetColor.g, targetColor.b, color.a)
+
+func _on_focus_entered():
+	Hover(true)
+
+func _on_focus_exited():
+	Hover(false)
+
+func _on_mouse_entered():
+	Hover(true)
+
+func _on_mouse_exited():
+	Hover(false)

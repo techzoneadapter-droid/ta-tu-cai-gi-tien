@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="EntityData" format=3 uid="uid://cowddbfolk5em"]
+
+[ext_resource type="Script" uid="uid://bsjkeucmohr0d" path="res://sources/cell/ItemCell.gd" id="1_bmwd8"]
+[ext_resource type="Script" uid="uid://mtjk83jdl176" path="res://sources/db/instance/EntityData.gd" id="2_eol0d"]
+[ext_resource type="Resource" uid="uid://dkqjldxwvwjm8" path="res://presets/cells/items/common/DorianKey.tres" id="3_dorkey"]
+[ext_resource type="Resource" uid="uid://coqp0ev4seayx" path="res://presets/entities/Slime.tres" id="4_2xxsd"]
+[ext_resource type="Script" uid="uid://l20aaqylleqo" path="res://sources/cell/SkillCell.gd" id="4_aoe72"]
+[ext_resource type="Texture2D" uid="uid://bwxulplws3lva" path="res://data/graphics/sprites/monsters/dorian.png" id="4_tex"]
+[ext_resource type="PackedScene" uid="uid://cesdnjj67k3c" path="res://presets/entities/sprites/Slime.tscn" id="spr_Slime"]
+
+[resource]
+script = ExtResource("2_eol0d")
+_parent = ExtResource("4_2xxsd")
+_id = 2929114690
+_name = "Dorian"
+_spritePreset = ExtResource("spr_Slime")
+_radius = 10
+_stats = {
+"baseExp": 10,
+"level": 5,
+"walkSpeed": 40.0
+}
+_equipment = Array[ExtResource("1_bmwd8")]([null, null, null, null, null, null, null, null])
+_customTexture = ExtResource("4_tex")
+_behaviour = 164
+_drops = Dictionary[ExtResource("1_bmwd8"), float]({
+ExtResource("3_dorkey"): 1.0
+})

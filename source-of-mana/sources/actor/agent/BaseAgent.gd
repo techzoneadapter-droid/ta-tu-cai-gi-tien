@@ -1,0 +1,297 @@
+extends Actor
+class_name BaseAgent
+
+#
+signal agent_killed
+signal agent_damaged(value : int)
+signal agent_healed(value : int)
+signal enemy_killed(monsterID : int)
+signal target_selected(target : BaseAgent)
+
+#
+var agent : NavigationAgent2D			= null
+
+var actionTimer : Timer					= null
+var cooldownTimers : Dictionary[int, bool]	= {}
+
+var hasCurrentGoal : bool				= false
+var isRelativeMode : bool				= false
+var lastPositions : PackedFloat32Array	= []
+
+var currentDirection : Vector2			= Vector2.ZERO
+var currentOrientation : Vector2		= Vector2.ZERO
+var currentVelocity : Vector2			= Vector2.ZERO
+var currentInput : Vector2				= Vector2.ZERO
+var currentWalkSpeed : Vector2			= Vector2.ZERO
+var currentSkillID : int				= DB.UnknownHash
+var defaultState : ActorCommons.State	= ActorCommons.State.UNKNOWN
+var requireFullUpdate : bool			= false
+var requireUpdate : bool				= false
+
+#
+func SwitchInputMode(clearCurrentInput : bool):
+	hasCurrentGoal = false
+
+	if clearCurrentInput:
+		currentInput = Vector2.ZERO
+		currentVelocity = Vector2.ZERO
+		currentDirection = Vector2.ZERO
+
+func UpdateInput():
+	if isRelativeMode:
+		if currentDirection != Vector2.ZERO:
+			var pos : Vector2i = currentDirection * ActorCommons.DisplacementVector + position
+			if WorldNavigation.GetPathLengthSquared(self, pos) <= ActorCommons.MaxDisplacementSquareLength:
+				WalkToward(pos)
+				currentInput = currentDirection
+		else:
+			SwitchInputMode(true)
+
+	if hasCurrentGoal:
+		if agent and not agent.is_navigation_finished():
+			var clampedDirection : Vector2 = Vector2(global_position.direction_to(agent.get_next_path_position()).normalized() * ActorCommons.InputApproximationUnit)
+			currentInput = Vector2(clampedDirection) / ActorCommons.InputApproximationUnit
+
+			if lastPositions.size() + 1 > ActorCommons.LastMeanValueMax:
+				lastPositions.remove_at(0)
+			lastPositions.push_back(agent.distance_to_target())
+		else:
+			SwitchInputMode(true)
+
+func SetState(wantedState : ActorCommons.State) -> bool:
+	var stateIdx : int = state * ActorCommons.State.COUNT + wantedState
+	var nextState : ActorCommons.State = ActorCommons.STATE_TRANSITIONS[stateIdx] as ActorCommons.State
+	if nextState != state:
+		requireFullUpdate = true
+		state = nextState
+		if self is AIAgent:
+			set_physics_process(true)
+	return state == wantedState
+
+func SetSkillCastID(skillID : int):
+	if currentSkillID != skillID:
+		requireFullUpdate = true
+		currentSkillID = skillID
+		if self is AIAgent:
+			set_physics_process(true)
+
+func AddItem(item : BaseCell, proba : float):
+	if item and inventory:
+		while proba > 0.0:
+			if proba >= 1.0 or randf_range(0.0, 1.0) <= proba:
+				inventory.PushItem(item, 1)
+				proba -= 1.0
+			else:
+				break
+
+func SetRelativeMode(enable : bool, givenDirection : Vector2):
+	if isRelativeMode != enable:
+		isRelativeMode = enable
+	if givenDirection == Vector2.ZERO:
+		ResetNav()
+		isRelativeMode = false
+	currentDirection = givenDirection
+
+func WalkToward(pos : Vector2):
+	if pos == position:
+		return
+
+	if self is AIAgent:
+		set_physics_process(true)
+
+	if SkillCommons.IsStaticCasting(self):
+		Skill.Stopped(self)
+
+	hasCurrentGoal = true
+	lastPositions.clear()
+	if agent:
+		agent.target_position = pos
+
+func LookAt(target : BaseAgent):
+	if target:
+		var newOrientation : Vector2 = Vector2(target.position - position).normalized()
+		if not newOrientation.is_equal_approx(currentDirection):
+			currentOrientation = newOrientation
+			requireFullUpdate = true
+			if self is AIAgent:
+				set_physics_process(true)
+
+func SetOrientation(direction : Vector2):
+	if direction.is_zero_approx() or not direction.is_finite():
+		return
+
+	var newOrientation : Vector2 = direction.normalized()
+	if not newOrientation.is_equal_approx(currentOrientation):
+		currentOrientation = newOrientation
+		requireFullUpdate = true
+
+func ResetNav():
+	WalkToward(position)
+	SwitchInputMode(true)
+
+# Regen system
+func UpdateDeltas(delta : float):
+	if not ActorCommons.IsAlive(self):
+		return
+
+	var recovery : ActorCommons.Recovery = ActorCommons.GetRecovery(self)
+	if stat.health < stat.current.maxHealth or stat.current.regenHealth < 0:
+		stat.deltaHealth += (stat.current.regenHealth / ActorCommons.RegenDelay) * delta * ActorCommons.GetRecoveryRatio(recovery, stat.current.regenHealth)
+	if stat.mana < stat.current.maxMana or stat.current.regenMana < 0:
+		stat.deltaMana += (stat.current.regenMana / ActorCommons.RegenDelay) * delta * ActorCommons.GetRecoveryRatio(recovery, stat.current.regenMana)
+	if stat.stamina < stat.current.maxStamina or stat.current.regenStamina < 0:
+		stat.deltaStamina += (stat.current.regenStamina / ActorCommons.RegenDelay) * delta * ActorCommons.GetRecoveryRatio(recovery, stat.current.regenStamina)
+
+	if abs(stat.deltaHealth) >= 1.0:
+		var healthChange : int = floori(abs(stat.deltaHealth)) * int(sign(stat.deltaHealth))
+		stat.deltaHealth -= healthChange
+		var previousHealth : int = stat.health
+		stat.SetHealth(healthChange, 1)
+		if healthChange < 0 and previousHealth != stat.health:
+			NotifyDrain(-healthChange)
+
+	if abs(stat.deltaMana) >= 1.0:
+		var manaChange : int = floori(abs(stat.deltaMana)) * int(sign(stat.deltaMana))
+		stat.deltaMana -= manaChange
+		stat.SetMana(manaChange)
+
+	if abs(stat.deltaStamina) >= 1.0:
+		var staminaChange : int = floori(abs(stat.deltaStamina)) * int(sign(stat.deltaStamina))
+		stat.deltaStamina -= staminaChange
+		stat.SetStamina(staminaChange)
+
+func NotifyDrain(damage : int):
+	var agentRID : int = get_rid().get_id()
+	var skillID : int = stat.buffs.GetSkillID(CellCommons.Modifier.RegenHealth)
+	Network.NotifyNeighbours(self, "TargetAlteration", [agentRID, agentRID, damage, ActorCommons.Alteration.HIT, skillID, false], true, true)
+
+#
+func SetData():
+	if defaultState == ActorCommons.State.UNKNOWN and data._state != ActorCommons.State.UNKNOWN:
+		defaultState = data._state
+	if defaultState != ActorCommons.State.UNKNOWN:
+		SetState(defaultState)
+
+	# Navigation
+	if self is AIAgent:
+		if not AICommons.IsStationary(self):
+			agent = ActorCommons.NPAgentScene.instantiate()
+	elif self is PlayerAgent:
+		agent = ActorCommons.PlayerAgentScene.instantiate()
+
+	if agent:
+		agent.set_radius(data._radius)
+		agent.set_neighbor_distance(data._radius * 2.0)
+		agent.set_avoidance_priority(clampf(data._radius / float(ActorCommons.MaxEntityRadiusSize), 0.0, 1.0))
+		add_child.call_deferred(agent)
+		RefreshWalkSpeed()
+
+func RefreshWalkSpeed():
+	var speed : float = Formula.GetWalkSpeed(stat)
+	if agent:
+		agent.set_max_speed(speed)
+		currentWalkSpeed = Vector2(speed, speed)
+
+#
+func Damage(_caller : BaseAgent):
+	pass
+
+func Interact(_caller : BaseAgent):
+	pass
+
+func GetNextShapeID() -> int:
+	return stat.shape if stat.IsMorph() else stat.spirit
+
+func GetNextPortShapeID() -> int:
+	return stat.spirit if stat.IsSailing() else DB.ShipHash
+
+# Death
+func Killed():
+	stat.buffs.ClearAll()
+	agent_killed.emit(self)
+	SetSkillCastID(DB.UnknownHash)
+	SetState(ActorCommons.State.DEATH)
+
+func Kill():
+	stat.SetHealth(-stat.current.maxHealth)
+
+func Revive() -> bool:
+	if not ActorCommons.IsAlive(self):
+		stat.SetHealth(int(stat.current.maxHealth / 2.0))
+		state = ActorCommons.State.IDLE
+		return true
+	return false
+
+#
+func _enter_tree():
+	if agent:
+		Callback.AddCallback(agent.velocity_computed, self._velocity_computed, [])
+
+func _exit_tree():
+	if agent:
+		Callback.ClearCallbacks(agent.velocity_computed)
+
+func _physics_process(_delta : float):
+	UpdateInput()
+
+	if agent and agent.get_avoidance_enabled():
+		agent.set_velocity(currentInput * currentWalkSpeed)
+	else:
+		_velocity_computed(currentInput * currentWalkSpeed)
+
+	NotifyPosition()
+
+func NotifyPosition():
+	if requireFullUpdate:
+		requireFullUpdate = false
+		requireUpdate = false
+		Network.NotifyNeighbours(self, "FullUpdateEntity", [get_rid().get_id(), velocity, position, currentOrientation, state, currentSkillID, stat.isRunning, NetworkCommons.FrameID()], true, true)
+	elif requireUpdate:
+		requireUpdate = false
+		Network.NotifyNeighbours(self, "UpdateEntity", [get_rid().get_id(), velocity, position, NetworkCommons.FrameID()], true, true)
+
+func _velocity_computed(safeVelocity : Vector2i):
+	if stat.health <= 0:
+		SetState(ActorCommons.State.DEATH)
+	elif SkillCommons.IsStaticCasting(self):
+		SetState(DB.SkillsDB[currentSkillID].state)
+	elif safeVelocity == Vector2i.ZERO:
+		if defaultState == ActorCommons.State.UNKNOWN:
+			SetState(ActorCommons.State.IDLE)
+	else:
+		SetState(ActorCommons.State.WALK)
+
+	if state == ActorCommons.State.WALK:
+		currentVelocity = safeVelocity
+	else:
+		currentVelocity = Vector2.ZERO
+
+	var wasZero : bool = velocity.is_zero_approx()
+	var isZero : bool = safeVelocity == Vector2i.ZERO
+	if wasZero and isZero:
+		if self is AIAgent:
+			set_physics_process(false)
+		return
+
+	if wasZero or isZero:
+		requireFullUpdate = true
+		velocity = currentVelocity
+	elif abs(currentVelocity.x - velocity.x) > ActorCommons.MinVelocityThreshold or abs(currentVelocity.y - velocity.y) > ActorCommons.MinVelocityThreshold:
+		requireUpdate = true
+		velocity = currentVelocity
+
+	if velocity != Vector2.ZERO:
+		currentOrientation = velocity.normalized()
+		move_and_slide()
+
+func _ready():
+	set_name.call_deferred(str(get_rid().get_id()))
+
+	actionTimer = Timer.new()
+	actionTimer.set_name("ActionTimer")
+	actionTimer.set_one_shot(true)
+	add_child.call_deferred(actionTimer)
+
+func _init(_type : ActorCommons.Type = ActorCommons.Type.NPC, _data : EntityData = null, _nick : String = "", isManaged : bool = false):
+	stat.entity_stats_updated.connect(RefreshWalkSpeed)
+	super._init(_type, _data, _nick, isManaged)

@@ -1,0 +1,222 @@
+extends RefCounted
+class_name Peers
+
+#
+static var DisconnectedAccount : AccountData = AccountData.new(NetworkCommons.PeerUnknownID, ActorCommons.Permission.NONE)
+
+enum TransportType { OFFLINE, ENET, WEBSOCKET, WEBRTC, DISCONNECTED }
+
+#
+class AccountData:
+	extends RefCounted
+
+	var accountID : int								= NetworkCommons.PeerUnknownID
+	var permission : ActorCommons.Permission		= ActorCommons.Permission.NONE
+
+	func _init(id : int, newPermission : ActorCommons.Permission):
+		accountID = id
+		permission = newPermission
+
+class Peer:
+	extends RefCounted
+
+	var accountID : int								= NetworkCommons.PeerUnknownID
+	var peerID : int								= NetworkCommons.PeerUnknownID
+	var characterID : int							= NetworkCommons.PeerUnknownID
+	var agentRID : int								= NetworkCommons.PeerUnknownID
+	var permission : ActorCommons.Permission		= ActorCommons.Permission.NONE
+	var accountData : AccountData					= null
+	var transport : Peers.TransportType				= Peers.TransportType.OFFLINE
+	var ipAddress : String							= NetworkCommons.LocalServerAddress
+	var primaryConnected : bool						= false
+	var rtcConnected : bool							= false
+	var rpcDeltas : Dictionary[StringName, int]		= {}
+
+	func _init(id : int, peerTransport : Peers.TransportType):
+		peerID = id
+		transport = peerTransport
+
+	func SetAccount(data : AccountData):
+		if data and data.accountID != NetworkCommons.PeerUnknownID:
+			var lastPeerID = Peers.accounts.get(data.accountID, NetworkCommons.PeerUnknownID)
+			if lastPeerID != NetworkCommons.PeerUnknownID and Peers.GetAccount(lastPeerID) != NetworkCommons.PeerUnknownID:
+				Network.DisconnectAccount(lastPeerID)
+				if data.accountID == lastPeerID:
+					Network.AuthError(NetworkCommons.AuthError.ERR_DUPLICATE_CONNECTION, lastPeerID)
+			Peers.accounts[data.accountID] = NetworkCommons.PeerUnknownID
+		if data:
+			Peers.accounts[data.accountID] = peerID
+			accountID = data.accountID
+			permission = data.permission
+		Network.online_accounts_update.emit()
+
+	func SetCharacter(id : int):
+		characterID = id
+		Network.online_characters_update.emit()
+
+	func SetAgent(id : int):
+		agentRID = id
+
+static var peers : Dictionary[int, Peer]			= {}
+static var accounts : Dictionary[int, int]			= {}
+static var bannedAccounts : Dictionary[int, int]	= {}
+static var bannedIPRanges : Dictionary[String, String]	= {}
+
+# Moderation
+static func IsBanned(accountID : int) -> bool:
+	var unbanTimestamp : int = bannedAccounts.get(accountID, 0)
+	if unbanTimestamp > 0:
+		if unbanTimestamp > int(Time.get_unix_time_from_system()):
+			return true
+		bannedAccounts.erase(accountID)
+	return false
+
+static func IsIPBanned(ip : String) -> bool:
+	if ip.is_empty():
+		return false
+	for ipRange in bannedIPRanges:
+		if NetworkCommons.IsIPInRange(ip, ipRange):
+			return true
+	return false
+
+# Handling
+static func AddPeer(peerID : int, transport : TransportType):
+	if peerID not in peers:
+		peers[peerID] = Peer.new(peerID, transport)
+		Network.peer_update.emit()
+
+static func SetTransport(peerID : int, transport : TransportType):
+	var peer : Peers.Peer = GetPeer(peerID)
+	if peer:
+		peer.transport = transport
+
+static func RemovePeer(peerID : int):
+	var peer : Peers.Peer = GetPeer(peerID)
+	if peer:
+		peers.erase(peerID)
+		Network.peer_update.emit()
+
+static func Footprint(peerID : int, methodName : StringName, actionDelta : int) -> bool:
+	var peer : Peers.Peer = GetPeer(peerID)
+	if peer:
+		var oldTick : int = 0
+		if methodName in peers[peerID].rpcDeltas:
+			oldTick = peers[peerID].rpcDeltas[methodName]
+
+		var currentTick : int = Time.get_ticks_msec()
+		if oldTick + actionDelta <= currentTick:
+			peers[peerID].rpcDeltas[methodName] = currentTick
+			return true
+
+	return false
+
+static func GetTransport(peerID : int) -> TransportType:
+	var peer : Peers.Peer = GetPeer(peerID)
+	if not peer:
+		return TransportType.OFFLINE
+	if peer.transport != TransportType.OFFLINE and not peer.primaryConnected and not peer.rtcConnected:
+		return TransportType.DISCONNECTED
+	return peer.transport
+
+static func GetTransportName(transport : TransportType) -> String:
+	match transport:
+		TransportType.WEBRTC:
+			return "WebRTC"
+		TransportType.WEBSOCKET:
+			return "WebSocket"
+		TransportType.ENET:
+			return "ENet"
+		TransportType.DISCONNECTED:
+			return "Disconnected"
+		_:
+			return "Offline"
+
+static func IsUsingWebSocket(peerID : int) -> bool:
+	return GetTransport(peerID) == TransportType.WEBSOCKET
+
+static func IsUsingWebRTC(peerID : int) -> bool:
+	return GetTransport(peerID) == TransportType.WEBRTC
+
+static func IsUsingENet(peerID : int) -> bool:
+	return GetTransport(peerID) == TransportType.ENET
+
+static func GetAssociatedNetServer(peerID : int) -> NetServer:
+	match GetTransport(peerID):
+		TransportType.WEBRTC:
+			return Network.WebRTCServer
+		TransportType.WEBSOCKET:
+			return Network.WebSocketServer
+		TransportType.ENET, TransportType.OFFLINE:
+			return Network.ENetServer
+		_:
+			return null
+
+static func GetPeerIP(peerID : int) -> String:
+	var peer : Peers.Peer = GetPeer(peerID)
+	return peer.ipAddress if peer else ""
+
+static func ResolvePeerIP(peerID : int) -> String:
+	var peer : Peers.Peer = GetPeer(peerID)
+	if peer:
+		match peer.transport:
+			TransportType.WEBSOCKET:
+				if Network.WebSocketServer and Network.WebSocketServer.currentPeer:
+					var packetPeer : PacketPeer = Network.WebSocketServer.currentPeer.get_peer(peerID)
+					if packetPeer and packetPeer is WebSocketPeer:
+						return packetPeer.get_connected_host()
+			TransportType.ENET:
+				if Network.ENetServer and Network.ENetServer.currentPeer:
+					var packetPeer : PacketPeer = Network.ENetServer.currentPeer.get_peer(peerID)
+					if packetPeer and packetPeer is ENetPacketPeer:
+						return packetPeer.get_remote_address()
+			TransportType.OFFLINE:
+				return NetworkCommons.LocalServerAddress
+	return NetworkCommons.LocalServerAddress
+
+# Info getters
+static func HasPeer(peerID : int) -> bool:
+	return peerID in Peers.peers
+
+static func GetPeer(peerID : int) -> Peers.Peer:
+	return Peers.peers.get(peerID, null)
+
+static func GetAccount(peerID : int) -> int:
+	var peer : Peers.Peer = GetPeer(peerID)
+	return peer.accountID if peer else NetworkCommons.PeerUnknownID
+
+static func GetCharacter(peerID : int) -> int:
+	var peer : Peers.Peer = GetPeer(peerID)
+	return peer.characterID if peer else NetworkCommons.PeerUnknownID
+
+static func GetAgent(peerID : int) -> PlayerAgent:
+	var peer : Peers.Peer = GetPeer(peerID)
+	return WorldAgent.GetAgent(peer.agentRID) if peer else null
+
+static func GetPermission(peerID : int) -> ActorCommons.Permission:
+	var peer : Peers.Peer = GetPeer(peerID)
+	return peer.permission if peer else ActorCommons.Permission.NONE
+
+# Auth validation
+static func FinalizeLogin(peer : Peer, accountName : String, accountData : AccountData, platform : int, rememberMe : bool) -> NetworkCommons.AuthError:
+	if IsBanned(accountData.accountID):
+		return NetworkCommons.AuthError.ERR_BANNED
+
+	if IsIPBanned(GetPeerIP(peer.peerID)):
+		return NetworkCommons.AuthError.ERR_BANNED
+
+	peer.SetAccount(accountData)
+	if platform < 0 or platform >= NetworkCommons.Platform.COUNT:
+		platform = NetworkCommons.Platform.UNKNOWN
+	Launcher.SQL.UpdateAccount(peer.accountID, platform)
+
+	if rememberMe:
+		IssueAuthToken(peer, accountName)
+
+	return NetworkCommons.AuthError.ERR_OK
+
+static func IssueAuthToken(peer : Peer, accountName : String) -> void:
+	var ipAddress : String = GetPeerIP(peer.peerID)
+	var token : String = Hasher.GenerateSalt(Hasher.DefaultTokenSize)
+	var tokenHash : String = Hasher.HashPassword(token)
+	Launcher.SQL.AddAuthToken(peer.accountID, tokenHash, ipAddress)
+	Network.AuthTokenResult(accountName, token, peer.peerID)

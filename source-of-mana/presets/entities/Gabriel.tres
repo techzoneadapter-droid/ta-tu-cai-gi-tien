@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="EntityData" format=3 uid="uid://bkh1g51j7jijp"]
+
+[ext_resource type="Script" uid="uid://bsjkeucmohr0d" path="res://sources/cell/ItemCell.gd" id="1_f62vb"]
+[ext_resource type="Script" uid="uid://mtjk83jdl176" path="res://sources/db/instance/EntityData.gd" id="2_uv7nx"]
+[ext_resource type="Resource" uid="uid://fn26nshedn1c" path="res://presets/cells/items/common/GabrielKey.tres" id="3_gabkey"]
+[ext_resource type="Script" uid="uid://l20aaqylleqo" path="res://sources/cell/SkillCell.gd" id="4_82sx6"]
+[ext_resource type="Resource" uid="uid://coqp0ev4seayx" path="res://presets/entities/Slime.tres" id="4_kxtxb"]
+[ext_resource type="Texture2D" uid="uid://dpubqmrxx3yyy" path="res://data/graphics/sprites/monsters/gabriel.png" id="4_tex"]
+[ext_resource type="PackedScene" uid="uid://cesdnjj67k3c" path="res://presets/entities/sprites/Slime.tscn" id="spr_Slime"]
+
+[resource]
+script = ExtResource("2_uv7nx")
+_parent = ExtResource("4_kxtxb")
+_id = 1184402587
+_name = "Gabriel"
+_spritePreset = ExtResource("spr_Slime")
+_radius = 10
+_stats = {
+"baseExp": 10,
+"level": 5,
+"walkSpeed": 40.0
+}
+_equipment = Array[ExtResource("1_f62vb")]([null, null, null, null, null, null, null, null])
+_customTexture = ExtResource("4_tex")
+_behaviour = 164
+_drops = Dictionary[ExtResource("1_f62vb"), float]({
+ExtResource("3_gabkey"): 1.0
+})

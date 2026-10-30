@@ -1,0 +1,200 @@
+extends VBoxContainer
+class_name ChatContainer
+
+const ChatLabelScene : PackedScene = preload(Path.GuiPst + "labels/ChatLabel.tscn")
+const WhisperUnreadIcon : Texture2D = preload("res://data/graphics/gui/tab/tab_warn.png")
+
+@onready var tabContainer : TabContainer		= $ChatTabContainer
+@onready var lineEdit : LineEdit				= $NewText
+@onready var idlePlaceholder : String			= lineEdit.placeholder_text
+
+@onready var backlog : ChatBacklog				= ChatBacklog.new()
+
+var channelTabs : Dictionary[String, int]		= {}
+
+#
+func AddLocalFeedback(text : String):
+	var channelIdx : GUICommons.ChatChannel = GUICommons.ChatChannel.LOCAL
+	AddLine(channelIdx, text + "\n", UICommons.TextColor)
+
+func AddGlobalFeedback(text : String):
+	var channelIdx : GUICommons.ChatChannel = GUICommons.ChatChannel.GLOBAL
+	AddLine(channelIdx, text + "\n", UICommons.TextColor)
+
+func AddPlayerChat(channelName : String, callerName : String, text : String, agentRID : int = -1):
+	var channelIdx : GUICommons.ChatChannel = GetChannelIndex(channelName)
+	if channelIdx == GUICommons.ChatChannel.UNKNOWN:
+		return
+
+	AddLine(channelIdx, callerName, UICommons.PlayerNameToColor(callerName))
+	AddLine(channelIdx, ": " + text + "\n", UICommons.LightTextColor)
+
+	if channelIdx == GUICommons.ChatChannel.LOCAL:
+		var entity : Entity = Entities.Get(agentRID) if agentRID > 0 else Entities.GetNamed(callerName)
+		if entity and entity.get_parent() and entity.interactive:
+			entity.interactive.DisplaySpeech(text)
+	elif channelIdx >= GUICommons.ChatChannel.DEFAULT_CHANNEL_COUNT:
+		var localNick : String = Launcher.Player.nick if Launcher.Player else ""
+		if callerName != localNick:
+			NotifyWhisper(channelIdx)
+
+#
+func NotifyWhisper(channelIdx : int):
+	if Launcher.Player and Launcher.Player.sfx:
+		Launcher.Player.sfx.HandleAlteration(ActorCommons.Alteration.WHISPER)
+
+	if tabContainer and tabContainer.current_tab != channelIdx:
+		tabContainer.get_tab_bar().set_tab_icon(channelIdx, WhisperUnreadIcon)
+
+#
+func AddSystemChat(channelName : String, text : String):
+	var channelIdx : GUICommons.ChatChannel = GetChannelIndex(channelName)
+	if channelIdx == GUICommons.ChatChannel.UNKNOWN:
+		return
+
+	AddLine(channelIdx, text + "\n", UICommons.TextColor)
+
+func AddLine(channelID : GUICommons.ChatChannel, text : String, color : Color):
+	if tabContainer:
+		var tab : Control = tabContainer.get_tab_control(channelID)
+		if tab and tab is RichTextLabel:
+			tab.text += "[color=#" + color.to_html(false) + "]" + text + "[/color]"
+
+#
+func GetChannelIndex(channelName : String) -> GUICommons.ChatChannel:
+	if not channelTabs.has(channelName):
+		return CreateChannel(channelName)
+	return channelTabs.get(channelName, GUICommons.ChatChannel.UNKNOWN)
+
+func SetChannelIndex(channelIdx : GUICommons.ChatChannel):
+	tabContainer.current_tab = channelIdx
+
+func CreateChannel(channelName : String) -> GUICommons.ChatChannel:
+	if channelTabs.has(channelName):
+		return channelTabs[channelName] as GUICommons.ChatChannel
+
+	var newTab : Control = ChatLabelScene.instantiate()
+	newTab.name = channelName
+
+	var channelIdx : GUICommons.ChatChannel = tabContainer.get_tab_count() as GUICommons.ChatChannel
+	tabContainer.add_child(newTab)
+	channelTabs[channelName] = channelIdx
+	tabContainer.current_tab = channelIdx
+	return channelIdx
+
+func GetChannelName(channelIdx : int) -> String:
+	for channelName in channelTabs:
+		if channelTabs[channelName] == channelIdx:
+			return channelName
+	return "0"
+
+#
+func isNewLineEnabled() -> bool:
+	return lineEdit.is_visible() and lineEdit.has_focus() if lineEdit else false
+
+func SetNewLineEnabled(enable : bool):
+	if Launcher.Action and lineEdit:
+		if not enable:
+			lineEdit.release_focus()
+		elif not LauncherCommons.isMobile:
+			lineEdit.grab_focus()
+
+#
+func OnNewTextSubmitted(newText : String):
+	if lineEdit:
+		if newText.is_empty() == false:
+			lineEdit.clear()
+			if Launcher.Player:
+				backlog.Add(newText)
+				if newText[0] == "/":
+					var command : String = newText.trim_prefix("/")
+					var commandStripped : String = command.strip_edges().to_lower()
+					match commandStripped:
+						"clear":
+							ClearCurrentTab()
+						_:
+							Network.TriggerCommand(command)
+				else:
+					var channelIdx : int = tabContainer.get_current_tab()
+					var channelName : String = ""
+					if channelIdx < GUICommons.ChatChannel.DEFAULT_CHANNEL_COUNT:
+						channelName = str(channelIdx)
+					else:
+						channelName = GetChannelName(channelIdx)
+					Network.TriggerChat(channelName, newText)
+		SetNewLineEnabled(false)
+
+#
+func ClearCurrentTab():
+	var tab : Control = tabContainer.get_tab_control(tabContainer.get_current_tab())
+	if tab and tab is RichTextLabel:
+		tab.text = ""
+
+#
+func OnTabCloseRequested(channelIdx : int):
+	if channelIdx < GUICommons.ChatChannel.DEFAULT_CHANNEL_COUNT:
+		return
+
+	var channelName : String = GetChannelName(channelIdx)
+	if channelName.is_empty():
+		return
+
+	var tabControl : Control = tabContainer.get_tab_control(channelIdx)
+	if tabControl:
+		tabContainer.remove_child(tabControl)
+		tabControl.queue_free()
+
+	channelTabs.erase(channelName)
+	for channelKey in channelTabs:
+		if channelTabs[channelKey] > channelIdx:
+			channelTabs[channelKey] -= 1
+
+func OnTabChanged(channelIdx : int):
+	var tabBar = tabContainer.get_tab_bar()
+	if channelIdx < GUICommons.ChatChannel.DEFAULT_CHANNEL_COUNT:
+		tabBar.tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_NEVER
+		tabBar.drag_to_rearrange_enabled = false
+	else:
+		tabBar.tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ACTIVE_ONLY
+		tabBar.drag_to_rearrange_enabled = true
+
+	tabBar.set_tab_icon(channelIdx, null)
+
+#
+func _ready():
+	var tabBar : TabBar = tabContainer.get_tab_bar()
+	tabBar.drag_to_rearrange_enabled = false
+	tabBar.tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_NEVER
+	tabBar.tab_close_pressed.connect(OnTabCloseRequested)
+	tabContainer.tab_changed.connect(OnTabChanged)
+
+	for channelIdx in GUICommons.ChatChannel.DEFAULT_CHANNEL_COUNT:
+		channelTabs[str(channelIdx)] = channelIdx
+
+	AddLocalFeedback("Welcome to " + LauncherCommons.ProjectName)
+	var linkColor : String = "[color=#" + UICommons.WarnTextColor.to_html(false) + "]"
+	var discordLink : String = linkColor + "[url=" + LauncherCommons.DiscordInviteLink + "]Discord[/url][/color]"
+	var ircLink : String = linkColor + "[url=" + LauncherCommons.IRCLink + "]IRC[/url][/color]"
+	AddGlobalFeedback("Messages sent here are publicly bridged to our " + discordLink + " and " + ircLink + " channels.")
+
+	SetNewLineEnabled(false)
+
+func _input(event : InputEvent):
+	if FSM.IsGameState() and isNewLineEnabled():
+		if Launcher.Action.TryJustPressed(event, "ui_cancel", true):
+			SetNewLineEnabled(false)
+		elif Launcher.Action.TryJustPressed(event, "ui_up", true):
+			backlog.Up()
+			lineEdit.text = backlog.Get()
+			lineEdit.set_caret_column(lineEdit.text.length())
+
+		elif Launcher.Action.TryJustPressed(event, "ui_down", true):
+			backlog.Down()
+			lineEdit.text = backlog.Get()
+			lineEdit.set_caret_column(lineEdit.text.length())
+		elif Launcher.Action.TryJustPressed(event, "ui_validate", true):
+			OnNewTextSubmitted(lineEdit.text)
+
+func _on_new_text_editing_toggled(toggled_on):
+	Launcher.Action.Enable(!toggled_on)
+	lineEdit.placeholder_text = "" if toggled_on else idlePlaceholder

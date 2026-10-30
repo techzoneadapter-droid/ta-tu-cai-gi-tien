@@ -1,0 +1,385 @@
+extends ServiceBase
+
+@onready var background : TextureRect			= $Background
+
+# Overlay
+@onready var menu : MenuIndicator				= $Overlay/VSections/Indicators/Menu
+@onready var stats : Control					= $Overlay/VSections/Indicators/Stat
+@onready var notificationLabel : Control		= $Overlay/VSections/Indicators/Info/Notification
+@onready var pickupPanel : Control				= $Overlay/VSections/Indicators/Info/PickUp
+@onready var progressionTracker : Control		= $Overlay/VSections/Indicators/Info/ProgressionTracker
+@onready var bossTracker : Control				= $Overlay/VSections/Indicators/Info/BossTracker
+
+# Contexts
+@onready var loadingControl : Control			= $Overlay/VSections/Contexts/Loading
+@onready var choiceContext : ContextMenu		= $Overlay/VSections/Contexts/Choice
+@onready var infoContext : ContextMenu			= $Overlay/VSections/Contexts/Info
+@onready var messageBox : MessageBox			= $Modals/MessageBox
+@onready var quitBox : QuitBox					= $Modals/QuitBox
+@onready var cellDetails : CellDetails			= $Overlay/VSections/Contexts/CellDetails
+@onready var loginPanel : Control				= $Overlay/VSections/Contexts/Login
+@onready var characterPanel : Control			= $Overlay/VSections/Contexts/Character
+
+# Shortcuts
+@onready var actionBoxes : Control				= $Overlay/VSections/ButtonBar/ActionBoxes
+@onready var buttonBoxes : Control				= $Overlay/VSections/ButtonBar/ButtonBoxes
+@onready var shortcuts : Container				= $Overlay/Sections/Shortcuts
+@onready var sticks : Container					= $Overlay/Sections/Shortcuts/Sticks
+
+# Windows
+@onready var windows : Control					= $Windows/Floating
+@onready var inventoryWindow : WindowPanel		= $Windows/Floating/Inventory
+@onready var minimapWindow : WindowPanel		= $Windows/Floating/Minimap
+@onready var chatWindow : WindowPanel			= $Windows/Floating/Chat
+@onready var settingsWindow : WindowPanel		= $Windows/Floating/Settings
+@onready var emoteWindow : WindowPanel			= $Windows/Floating/Emote
+@onready var skillWindow : WindowPanel			= $Windows/Floating/Skill
+@onready var progressWindow : WindowPanel		= $Windows/Floating/Progress
+@onready var statWindow : WindowPanel			= $Windows/Floating/Stat
+@onready var socialWindow : WindowPanel			= $Windows/Floating/Social
+@onready var dialoguePanel : WindowPanel		= $Windows/Floating/Dialogue
+@onready var tradePanel : WindowPanel			= $Windows/Floating/Trade
+
+@onready var chatContainer : ChatContainer		= $Windows/Floating/Chat/Margin/VBoxContainer
+@onready var emoteContainer : Container			= $Windows/Floating/Emote/Layout/ItemContainer/Grid
+
+# Shaders
+@onready var shaders : CanvasLayer				= $Shaders
+@onready var CRTShader : TextureRect			= $Shaders/CRT
+@onready var HQ4xShader : TextureRect			= $Shaders/HQ4x
+
+# Highlight
+var highlight : UIHighlight						= UIHighlight.new()
+var shortcutTiles : Array[CellTile]				= []
+
+# Player menu
+var playerMenu : PopupMenu						= UICommons.PlayerMenuPreset.instantiate()
+var playerMenuTarget : String					= ""
+
+# State transition
+var progressTimer : Timer						= null
+
+#
+func CloseWindow():
+	match FSM.currentState:
+		FSM.States.LOGIN_SCREEN, FSM.States.LOGIN_PROGRESS:
+			loginPanel.Close()
+		FSM.States.CHAR_SCREEN, FSM.States.CHAR_PROGRESS:
+			characterPanel.Close()
+		FSM.States.IN_GAME:
+			quitBox.Toggle()
+
+func GetCurrentWindow() -> Control:
+	if windows:
+		var windowsCount : int = windows.get_child_count()
+		if windowsCount > 0:
+			return windows.get_child(windowsCount - 1)
+	return null
+
+func CloseCurrent():
+	if quitBox.TryClose() or messageBox.TryClose():
+		return
+
+	var focusedNode : Control = get_viewport().gui_get_focus_owner()
+	if focusedNode and focusedNode is LineEdit:
+		focusedNode.release_focus()
+	else:
+		var control : WindowPanel = GetCurrentWindow()
+		if control and control.is_visible() and control.floating:
+			ToggleControl(control)
+
+func GoBack():
+	if Launcher.Action and Launcher.Action.IsEnabled():
+		CloseWindow()
+	else:
+		CloseCurrent()
+
+func ToggleControl(control : WindowPanel):
+	if control:
+		control.ToggleControl()
+
+func ToggleChatNewLine():
+	if chatWindow:
+		if chatWindow.is_visible() == false:
+			ToggleControl(chatWindow)
+		chatContainer.SetNewLineEnabled(true)
+
+func ToggleFullscreen():
+	if settingsWindow:
+		settingsWindow.set_fullscreen(!settingsWindow.is_fullscreen())
+
+func DisplayActions(actions : PackedStringArray, duration : float = -1.0):
+	infoContext.Clear()
+	for action in actions:
+		if DeviceManager.HasActionName(action):
+			infoContext.Push(ContextData.new(action))
+	infoContext.FadeIn(false, duration)
+
+func DisplayPlayerMenu(nick : String):
+	playerMenuTarget = nick
+	playerMenu.clear()
+	playerMenu.add_item("Whisper", UICommons.PlayerMenu.WHISPER)
+	if not tradePanel.IsTrading():
+		playerMenu.add_item("Trade", UICommons.PlayerMenu.TRADE)
+	playerMenu.position = Vector2i(get_viewport().get_mouse_position())
+	playerMenu.popup()
+
+func OnPlayerMenuPressed(id : int):
+	match id:
+		UICommons.PlayerMenu.WHISPER: Network.TriggerCommand("query \"%s\"" % playerMenuTarget)
+		UICommons.PlayerMenu.TRADE: Network.TriggerCommand("trade \"%s\"" % playerMenuTarget)
+
+func IsDialogueContextOpened() -> bool:
+	return dialoguePanel.is_visible()
+
+func OpenDiscord():
+	OS.shell_open(LauncherCommons.DiscordInviteLink)
+
+func DisplayFirstLogin():
+	if LauncherCommons.isWeb:
+		UICommons.MessageBox("""Welcome to Source of Mana!
+
+You're currently playing the web version, which may run slower and isn't as stable as the downloadable versions.
+
+This version is mainly here to showcase the game.
+For the best experience, we recommend using the native client found on our itch.io page (Available on Windows, Linux, macOS, and Android).
+""",
+			settingsWindow.set_sessionfirstlogin.bind(false), "OK",
+			OpenDiscord, "Join our Discord")
+	else:
+		UICommons.MessageBox("""Welcome to Source of Mana!
+
+This is an open-source MMORPG and still a work in progress. You're welcome to explore, test, and enjoy the current features.
+
+We're also always looking for contributors!
+If you'd like to get involved in development, design, writing, or testing, feel free to join our community.
+Otherwise, have fun and thank you for playing!
+""",
+			settingsWindow.set_sessionfirstlogin.bind(false), "OK",
+			OpenDiscord, "Join our Discord")
+
+func DisplayDeath():
+	UICommons.MessageBox(DeathMessages.Pick(), Network.TriggerRespawn, "Respawn")
+	messageBox.closeCallback = Callable()
+
+#
+func EnterLoginMenu():
+	if progressTimer != null:
+		progressTimer.stop()
+		progressTimer = null
+
+	infoContext.set_visible(false)
+	choiceContext.Hide()
+	progressionTracker.set_visible(false)
+	bossTracker.set_visible(false)
+	menu.SetItemsVisible(false)
+	menu.Close()
+	stats.SetBarsVisible(false)
+	statWindow.set_visible(false)
+	tradePanel.Close()
+	dialoguePanel.set_visible(false)
+	pickupPanel.AnimateClose()
+	loadingControl.set_visible(false)
+	actionBoxes.set_visible(false)
+	quitBox.Clear()
+	messageBox.Clear()
+	shortcuts.set_visible(false)
+	characterPanel.set_visible(false)
+	buttonBoxes.set_visible(false)
+
+	background.set_visible(true)
+	loginPanel.set_visible(true)
+	loginPanel.RefreshOnce()
+	buttonBoxes.set_visible(true)
+
+func EnterLoginProgress():
+	loginPanel.set_visible(false)
+	buttonBoxes.set_visible(false)
+
+	progressTimer = Callback.SelfDestructTimer(self, NetworkCommons.LoginAttemptTimeout, TimeoutLoginProgress, [], "ProgressTimer")
+	loadingControl.set_visible(true)
+	ShaderWarmup.Start()
+
+func TimeoutLoginProgress():
+	Network.AuthError(NetworkCommons.AuthError.ERR_TIMEOUT)
+	progressTimer = null
+
+func EnterCharMenu():
+	if progressTimer:
+		progressTimer.stop()
+		progressTimer = null
+
+	if not DB.isInitialized:
+		if not Launcher.dbInitialized.is_connected(_show_char_menu):
+			Launcher.dbInitialized.connect(_show_char_menu, CONNECT_ONE_SHOT)
+		return
+	_show_char_menu()
+
+func _show_char_menu():
+	if ShaderWarmup.state != ShaderWarmup.State.DONE:
+		if not Launcher.shadersWarmed.is_connected(_show_char_menu):
+			Launcher.shadersWarmed.connect(_show_char_menu, CONNECT_ONE_SHOT)
+		ShaderWarmup.Start()
+		return
+	if FSM.currentState != FSM.States.CHAR_SCREEN:
+		return
+
+	loadingControl.set_visible(false)
+	background.set_visible(false)
+	loginPanel.set_visible(false)
+	characterPanel.RefreshOnce()
+
+	characterPanel.set_visible(true)
+	buttonBoxes.set_visible(true)
+
+func EnterCharProgress():
+	characterPanel.set_visible(false)
+	buttonBoxes.set_visible(false)
+
+	progressTimer = Callback.SelfDestructTimer(self, NetworkCommons.CharSelectionTimeout, TimeoutCharProgress, [], "ProgressTimer")
+	loadingControl.set_visible(true)
+
+func TimeoutCharProgress():
+	Network.CharacterError(NetworkCommons.CharacterError.ERR_TIMEOUT)
+	progressTimer = null
+
+func EnterGame():
+	if progressTimer:
+		progressTimer.stop()
+		progressTimer = null
+	loadingControl.set_visible(false)
+	background.set_visible(false)
+	loginPanel.set_visible(false)
+	characterPanel.set_visible(false)
+	buttonBoxes.set_visible(false)
+
+	Launcher.Camera.ResetCinematic()
+	DisplayActions(["gp_interact", "gp_target", "gp_untarget", "gp_pickup", "gp_sit"])
+
+	stats.SetBarsVisible(true)
+	menu.set_visible(true)
+	actionBoxes.set_visible(true)
+	shortcuts.set_visible(true)
+	menu.SetItemsVisible(true)
+
+func ExitGame():
+	notificationLabel.ClearNotification()
+
+func EnterPip():
+	Launcher.GUI.set_visible(false)
+	if Launcher.Camera:
+		Launcher.Camera.ZoomAt(0)
+
+func ExitPip():
+	Launcher.GUI.set_visible(true)
+	if Launcher.Camera:
+		Launcher.Camera.ZoomReset()
+
+#
+func _post_launch():
+	if not FSM.enter_login.is_connected(EnterLoginMenu):
+		FSM.enter_login.connect(EnterLoginMenu)
+	if not FSM.enter_login_progress.is_connected(EnterLoginProgress):
+		FSM.enter_login_progress.connect(EnterLoginProgress)
+	if not FSM.enter_char.is_connected(EnterCharMenu):
+		FSM.enter_char.connect(EnterCharMenu)
+	if not FSM.enter_char_progress.is_connected(EnterCharProgress):
+		FSM.enter_char_progress.connect(EnterCharProgress)
+	if not FSM.enter_game.is_connected(EnterGame):
+		FSM.enter_game.connect(EnterGame)
+	if not FSM.exit_game.is_connected(ExitGame):
+		FSM.exit_game.connect(ExitGame)
+	FSM.EnterState(FSM.States.LOGIN_SCREEN)
+	if minimapWindow:
+		minimapWindow._post_launch()
+	if stats:
+		stats._post_launch()
+	if statWindow:
+		statWindow._post_launch()
+	if inventoryWindow:
+		inventoryWindow._post_launch()
+	isInitialized = true
+
+func Destroy():
+	if minimapWindow:
+		minimapWindow.Destroy()
+	isInitialized = false
+
+func _notification(notif):
+	match notif:
+		Node.NOTIFICATION_WM_CLOSE_REQUEST:
+			quitBox.Toggle()
+		NOTIFICATION_WM_GO_BACK_REQUEST:
+			GoBack()
+		Node.NOTIFICATION_WM_MOUSE_EXIT:
+			if windows:
+				windows.ClearWindowsModifier()
+		Node.NOTIFICATION_DRAG_BEGIN:
+			Launcher.Action.Enable(false)
+		Node.NOTIFICATION_DRAG_END:
+			Launcher.Action.Enable(true)
+			DeviceManager.ResetCursor()
+		NOTIFICATION_APPLICATION_PIP_MODE_ENTERED:
+			EnterPip()
+		NOTIFICATION_APPLICATION_PIP_MODE_EXITED:
+			ExitPip()
+
+func HighlightUI(target : UICommons.UITarget):
+	if highlight:
+		var node : Control = GetUITarget(target)
+		if node:
+			OpenUI(target)
+			highlight.Show(node)
+		else:
+			highlight.Clear()
+
+func OpenUI(target : UICommons.UITarget):
+		var node : Control = GetUITarget(target)
+		if node:
+			if not node.is_visible():
+				if node is WindowPanel:
+					ToggleControl(node)
+				elif node is MenuIndicator:
+					node._on_button_pressed()
+
+func GetUITarget(target : UICommons.UITarget) -> Control:
+	match target:
+		UICommons.UITarget.NONE:			return null
+		UICommons.UITarget.MENUINDICATOR:	return menu
+		UICommons.UITarget.STATINDICATOR:	return stats
+		UICommons.UITarget.HEALTHBAR:		return stats.hpStat
+		UICommons.UITarget.MANABAR:			return stats.manaStat
+		UICommons.UITarget.STAMINABAR:		return stats.staminaStat
+		UICommons.UITarget.STAT:			return statWindow
+		UICommons.UITarget.INVENTORY:		return inventoryWindow
+		UICommons.UITarget.CHAT:			return chatWindow
+		UICommons.UITarget.SKILL:			return skillWindow
+		UICommons.UITarget.MINIMAP:			return minimapWindow
+		UICommons.UITarget.PROGRESS:		return progressWindow
+		UICommons.UITarget.SOCIAL:			return socialWindow
+		UICommons.UITarget.EMOTE:			return emoteWindow
+		UICommons.UITarget.SETTINGS:		return settingsWindow
+		UICommons.UITarget.ACTION_BAR:		return actionBoxes
+		_: push_error("Unhandled UITarget")
+	return null
+
+#
+func _ready():
+	get_tree().set_auto_accept_quit(false)
+	get_tree().set_quit_on_go_back(false)
+	playerMenu.id_pressed.connect(OnPlayerMenuPressed)
+	playerMenu.set_visible(false)
+	add_child.call_deferred(playerMenu)
+	DisplayServer.pip_mode_set_auto_enter_on_background(true)
+
+func _on_ui_margin_resized():
+	if CRTShader and CRTShader.material:
+		CRTShader.material.set_shader_parameter("resolution", get_viewport().size / 2)
+
+	if settingsWindow:
+		settingsWindow.set_fullscreen(DisplayServer.window_get_mode(0) == DisplayServer.WINDOW_MODE_FULLSCREEN, false)
+		settingsWindow.set_windowPos(DisplayServer.window_get_position(0), false)
+		settingsWindow.set_resolution(DisplayServer.window_get_size(0), false)
+
+	if Launcher.Camera:
+		Launcher.Camera.SendViewportSize()

@@ -1,0 +1,153 @@
+extends RefCounted
+class_name Util
+
+# Logging
+static func PrintLog(logGroup : String, logString : String):
+	print("[%d.%03d][%s] %s" % [Time.get_ticks_msec() / 1000.0, Time.get_ticks_msec() % 1000, logGroup, logString])
+
+static func PrintInfo(logGroup : String, logString : String):
+	if Launcher.Debug:
+		print("[%d.%03d][%s] %s" % [Time.get_ticks_msec() / 1000.0, Time.get_ticks_msec() % 1000, logGroup, logString])
+
+# Object/Node management
+static func DuplicateObject(from : Object, to : Object):
+	for prop in from.get_property_list():
+		var name : StringName = prop.name
+		if prop.usage & PROPERTY_USAGE_SCRIPT_VARIABLE and name in to:
+			var value : Variant = from.get(name)
+			if typeof(value) in [TYPE_ARRAY, TYPE_DICTIONARY]:
+				to.set(name, value.duplicate(true))
+			elif value is Resource:
+				to.set(name, value.duplicate(true))
+			elif value is RefCounted and value.get_script() != null:
+				var duplicatedValue : RefCounted = value.get_script().new()
+				DuplicateObject(value, duplicatedValue)
+				to.set(name, duplicatedValue)
+			else:
+				to.set(name, value)
+
+static func RemoveNode(node : Node, parent : Node):
+	if node != null:
+		if parent != null:
+			parent.remove_child(node)
+		node.queue_free()
+
+# Screenshot
+static func GetScreenCapture() -> Image:
+	return Launcher.get_viewport().get_texture().get_image()
+
+# Audio
+static func VolumeRatioToDb(volumeRatio : float) -> float:
+	var interpolation : float = clamp((log(clampf(volumeRatio, 0.0, 1.0)) + 5.0) / 5.0, 0.0, 1.06)
+	return (1.0 - interpolation) * -80.0
+
+# Math
+static func UnrollPathLength(path : PackedVector2Array) -> float:
+	var pathSize : int = path.size()
+	if pathSize < 2:
+		return INF
+	var unrolledPos : Vector2 = Vector2.ZERO
+	for i in (pathSize-1):
+		unrolledPos += (path[i] - path[i+1]).abs()
+	unrolledPos *= SkillCommons.PerspectiveIncrease
+	return unrolledPos.length_squared()
+
+static func IsReachableSquared(pos1 : Vector2, pos2 : Vector2, threshold : float) -> bool:
+	return pos1.distance_squared_to(pos2) < threshold
+
+# Fade
+static func FadeInOutRatio(value : float, maxValue : float, fadeIn : float, fadeOut : float) -> float:
+	var ratio : float = 1.0
+	if value < fadeIn:
+		ratio = min(value / fadeIn, ratio)
+	if value > maxValue - fadeOut:
+		ratio = min((fadeOut - (value - (maxValue - fadeOut))) / fadeOut, ratio)
+	return ratio
+
+# Text
+static func GetFormatedText(value : String, numberAfterComma : int = 0) -> String:
+	var parts : PackedStringArray = value.split(".", true, 1)
+	var integerPart : String = AddThousandsSeparators(parts[0])
+	var decimalPart : String = parts[1] if parts.size() > 1 else ""
+
+	decimalPart = decimalPart.rpad(numberAfterComma, "0") if numberAfterComma > 0 else decimalPart.rstrip("0")
+
+	return integerPart + ("." + decimalPart if not decimalPart.is_empty() else "")
+
+static func AddThousandsSeparators(integerPart : String) -> String:
+	var charCounter : int = integerPart.length() - 3
+	while charCounter > 0:
+		integerPart = integerPart.insert(charCounter, ",")
+		charCounter -= 3
+	return integerPart
+
+static func GetCompactNumber(value : int) -> String:
+	var absValue : int = absi(value)
+	var prefix : String = "-" if value < 0 else ""
+	if absValue >= 1000000000:
+		return prefix + GetFormatedText(str(floorf(absValue * 10.0 / 1000000000) / 10.0)) + "B"
+	elif absValue >= 1000000:
+		return prefix + GetFormatedText(str(floorf(absValue * 10.0 / 1000000) / 10.0)) + "M"
+	elif absValue >= 1000:
+		return prefix + GetFormatedText(str(floorf(absValue * 10.0 / 1000) / 10.0)) + "K"
+	return prefix + str(absValue)
+
+# Dictionary
+static func DicCheckOrAdd(dic : Dictionary[Variant, Variant], key : Variant, value : Variant):
+	if not key in dic:
+		dic[key] = value
+	elif dic[key] == null:
+		dic[key] = value
+
+# Platforms
+static func IsMobile() -> bool:
+	return OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
+
+static func GetPlatformName() -> String:
+	if LauncherCommons.isWeb and IsMobile():
+		return "Android"
+	return OS.get_name()
+
+# Delay
+static func ParseDuration(durationStr : String) -> int:
+	var totalSeconds : int = 0
+	var currentNumber : String = ""
+
+	for c in durationStr:
+		if c.is_valid_int():
+			currentNumber += c
+		else:
+			var value : int = currentNumber.to_int() if not currentNumber.is_empty() else 0
+			currentNumber = ""
+			match c:
+				"y":
+					totalSeconds += value * 365 * 24 * 3600
+				"d":
+					totalSeconds += value * 24 * 3600
+				"h":
+					totalSeconds += value * 3600
+				"m":
+					totalSeconds += value * 60
+				"s":
+					totalSeconds += value
+
+	return totalSeconds if totalSeconds > 0 else 3600
+
+static func FormatDuration(seconds : int) -> String:
+	var years : int = floori(seconds / (365.0 * 24.0 * 3600.8))
+	seconds -= years * 365 * 24 * 3600
+	var days : int = floori(seconds / (24.0 * 3600.0))
+	seconds -= days * 24 * 3600
+	var hours : int = floori(seconds / 3600.0)
+	seconds -= hours * 3600
+	var minutes : int = floori(seconds / 60.0)
+	seconds -= minutes * 60
+
+	return "%s%s%s%s%s" % \
+	[ \
+		"%dy" % years if years > 0 else "", \
+		"%dd" % days if days > 0 else "", \
+		"%dh" % hours if hours > 0 else "", \
+		"%dm" % minutes if minutes > 0 else "", \
+		"%ds" % seconds if seconds > 0 else "", \
+	]

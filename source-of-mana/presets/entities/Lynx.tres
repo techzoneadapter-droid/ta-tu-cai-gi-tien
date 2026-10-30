@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="EntityData" format=3 uid="uid://4nkg1dyareli"]
+
+[ext_resource type="Script" uid="uid://bsjkeucmohr0d" path="res://sources/cell/ItemCell.gd" id="1_dfoc1"]
+[ext_resource type="Script" uid="uid://mtjk83jdl176" path="res://sources/db/instance/EntityData.gd" id="2_4cr5i"]
+[ext_resource type="Script" uid="uid://l20aaqylleqo" path="res://sources/cell/SkillCell.gd" id="3_skill"]
+[ext_resource type="Resource" uid="uid://dlftukimhm3l1" path="res://presets/cells/skills/SonicWave.tres" id="4_sonic"]
+[ext_resource type="AudioStream" uid="uid://616hxtutqvpp" path="res://data/sounds/entities/lynx/attack.ogg" id="5_tk77m"]
+[ext_resource type="PackedScene" uid="uid://cs3cgktwqe00i" path="res://presets/entities/sprites/Lynx.tscn" id="spr_Lynx"]
+
+[resource]
+script = ExtResource("2_4cr5i")
+_id = 2089340336
+_name = "Lynx"
+_spritePreset = ExtResource("spr_Lynx")
+_radius = 24
+_stats = {
+"attack": 40,
+"baseExp": 55,
+"cooldownAttackDelay": 1.5,
+"defense": 15,
+"dodgeRate": 0.22,
+"level": 21,
+"mattack": 60,
+"maxHealth": 250,
+"mdefense": 25,
+"walkSpeed": 160.0
+}
+_equipment = Array[ExtResource("1_dfoc1")]([null, null, null, null, null, null, null, null])
+_behaviour = 4
+_skills = Dictionary[ExtResource("3_skill"), float]({
+ExtResource("4_sonic"): 10.0
+})
+_stateSFX = Dictionary[int, AudioStream]({
+3: ExtResource("5_tk77m")
+})

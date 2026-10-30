@@ -1,0 +1,608 @@
+extends NetInterface
+class_name NetClient
+
+#
+func WarpPlayer(mapID : int, playerPos : Vector2, _peerID : int):
+	if Launcher.Map:
+		var mapData : FileData = DB.MapsDB.get(mapID, null)
+		if mapData:
+			Launcher.Map.EmplaceMapNode(mapID)
+			Launcher.Camera.LookAt(playerPos, false)
+			# Reset input in both the client and server to force re-send a new update once the map is loaded
+			Network.ClearNavigation()
+			Launcher.Action.previousMove = Vector2.ZERO
+			PushNotification(mapData._name, _peerID)
+
+func Emote(agentRID : int, emoteID : int, _peerID : int):
+	var entity : Entity = Entities.Get(agentRID)
+	if entity and entity.get_parent() and entity.interactive:
+		entity.interactive.DisplayEmote.call_deferred(emoteID)
+
+func PreloadPlayer(agentRID : int, spirit : int, currentShape : int, nick : String, level : int, health : int, hairstyle : int, haircolor : int, gender : ActorCommons.Gender, race : int, skintone : int, equipment : Dictionary, _peerID : int):
+	if Launcher.Map:
+		Launcher.Map.PreloadPlayer(agentRID, spirit, currentShape, nick, level, health, hairstyle, haircolor, gender, race, skintone, equipment)
+
+func PreloadEntity(agentRID : int, actorType : ActorCommons.Type, currentShape : int, nick : String, defaultState : ActorCommons.State, _peerID : int):
+	if Launcher.Map:
+		Launcher.Map.PreloadEntity(agentRID, actorType, currentShape, nick, defaultState)
+
+func RemoveEntity(agentRID : int, _peerID : int):
+	if Launcher.Map:
+		Launcher.Map.RemoveEntity(agentRID)
+
+func FullUpdateEntity(agentRID : int, velocity : Vector2, position : Vector2, orientation : Vector2, state : ActorCommons.State, skillCastID : int, isRunning : bool, frameID : int, _peerID : int):
+	if Launcher.Map:
+		Launcher.Map.FullUpdateEntity(agentRID, velocity, position, orientation, state, skillCastID, isRunning, frameID)
+
+func UpdateEntity(agentRID : int, velocity : Vector2, position : Vector2, frameID : int, _peerID : int):
+	if Launcher.Map:
+		Launcher.Map.UpdateEntity(agentRID, velocity, position, frameID)
+
+func Express(agentRID : int, text : String, _peerID : int):
+	if Launcher.GUI:
+		var entity : Entity = Entities.Get(agentRID)
+		if entity and entity.get_parent() and entity.interactive:
+			entity.interactive.DisplaySpeech(text)
+
+func ChatQuery(channelName : String, _peerID : int):
+	if Launcher.GUI:
+		var channelIdx : GUICommons.ChatChannel = Launcher.GUI.chatContainer.GetChannelIndex(channelName)
+		if channelIdx != GUICommons.ChatChannel.UNKNOWN:
+			Launcher.GUI.chatContainer.SetChannelIndex(channelIdx)
+
+func ChatPlayer(channelName : String, callerName : String, text : String, agentRID : int, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.chatContainer.AddPlayerChat(channelName, callerName, text, agentRID)
+
+func ChatSystem(channelName : String, text : String, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.chatContainer.AddSystemChat(channelName, text)
+
+func ToggleContext(enable : bool, _peerID : int):
+	if Launcher.Player:
+		Launcher.GUI.dialoguePanel.Toggle(enable)
+
+func ContextText(author : String, text : String, _peerID : int):
+	if not Launcher.Player:
+		return
+	if not author.is_empty():
+		Launcher.GUI.dialoguePanel.AddName(author)
+	Launcher.GUI.dialoguePanel.AddDialogue(text)
+	Launcher.GUI.dialoguePanel.ToggleButton(false, "")
+
+func ContextThink(author : String, text : String, _peerID : int):
+	if not Launcher.Player:
+		return
+	if not author.is_empty():
+		Launcher.GUI.dialoguePanel.AddName(author)
+	Launcher.GUI.dialoguePanel.AddThink(text)
+	Launcher.GUI.dialoguePanel.ToggleButton(false, "")
+
+func ContextContinue(_peerID : int):
+	if Launcher.Player:
+		Launcher.GUI.dialoguePanel.ToggleButton(true, "Next")
+
+func ContextClose(_peerID : int):
+	if Launcher.Player:
+		Launcher.GUI.dialoguePanel.ToggleButton(true, "Close")
+
+func ContextChoice(texts : PackedStringArray, _peerID : int):
+	if Launcher.Player:
+		Launcher.GUI.dialoguePanel.AddChoices(texts)
+
+func HighlightUI(target : int, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.HighlightUI(target as UICommons.UITarget)
+
+func OpenUI(target : int, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.OpenUI(target)
+
+func CameraLookAt(pos : Vector2, _peerID : int):
+	if Launcher.Camera:
+		Launcher.Camera.LookAt(pos)
+
+func CameraReset(_peerID : int):
+	if Launcher.Camera:
+		Launcher.Camera.LookAt(Launcher.Player.position)
+
+func TargetAlteration(agentRID : int, targetRID : int, value : int, alteration : ActorCommons.Alteration, skillID : int, hasFeedback : bool, _peerID : int):
+	var entity : Entity = Entities.Get(targetRID)
+	var caller : Entity = Entities.Get(agentRID)
+	if not caller or not entity or not entity.get_parent():
+		return
+
+	if entity.interactive:
+		entity.interactive.DisplayAlteration.call_deferred(entity, caller, value, alteration, skillID)
+
+	if hasFeedback:
+		if entity.sfx:
+			entity.sfx.HandleAlteration(alteration, caller == Launcher.Player or entity.sfx.IsLocallyInvolved())
+
+		if entity == Launcher.Player:
+			match alteration:
+				ActorCommons.Alteration.EXP:
+					Launcher.GUI.chatContainer.AddLocalFeedback("You receive " + str(value) + " exp")
+				ActorCommons.Alteration.GP:
+					Launcher.GUI.chatContainer.AddLocalFeedback("You receive " + str(value) + " GP")
+
+func Casted(agentRID : int, skillID : int, cooldown : float, _peerID : int):
+	var entity : Entity = Entities.Get(agentRID)
+	if entity and entity.get_parent() and entity.interactive:
+		entity.interactive.DisplaySkill.call_deferred(entity, skillID, cooldown)
+
+func EntityBuff(agentRID : int, effect : CellCommons.Modifier, skillID : int, enabled : bool, _peerID : int):
+	var entity : Entity = Entities.Get(agentRID)
+	if entity and entity.get_parent() and entity.interactive:
+		entity.interactive.DisplayBuff.call_deferred(effect, skillID, enabled)
+
+func ThrowProjectile(agentRID : int, targetPos : Vector2, skillID: int, _peerID : int):
+	if not Launcher.Map or not Launcher.Map.currentFringe:
+		return
+	var skill : SkillCell = DB.SkillsDB.get(skillID, null)
+	if not skill:
+		return
+	var entity : Entity = Entities.Get(agentRID)
+	if not entity or not entity.get_parent() or not entity.interactive:
+		return
+	entity.interactive.DisplayProjectile.call_deferred(targetPos, skill)
+
+func Morphed(agentRID : int, morphID : int, morphed : bool, _peerID : int):
+	var entity : Entity = Entities.Get(agentRID)
+	if entity:
+		var morphData : EntityData = DB.EntitiesDB.get(morphID, null)
+		if morphData:
+			entity.stat.Morph(morphData)
+			entity.SetVisual(morphData, morphed)
+
+func UpdatePublicStats(agentRID : int, level : int, health : int, maxHealth : int, hairstyle : int, haircolor : int, gender : ActorCommons.Gender, race : int, skintone : int, currentShape : int, _peerID : int):
+	if not Launcher.Map:
+		return
+
+	var entry : EntityCacheEntry = Launcher.Map.entityCache.get(agentRID, null)
+	if entry:
+		entry.level			= level
+		entry.health		= health
+		entry.hairstyle		= hairstyle
+		entry.haircolor		= haircolor
+		entry.gender		= gender
+		entry.race			= race
+		entry.skintone		= skintone
+		entry.currentShape	= currentShape
+
+	var entity : Entity = Entities.Get(agentRID)
+	if not entity:
+		return
+
+	if entity.stat:
+		var newShape : bool = entity.stat.currentShape != currentShape
+		entity.stat.level				= level
+		entity.stat.health				= health
+		entity.stat.current.maxHealth	= maxHealth
+		entity.stat.currentShape		= currentShape
+		if newShape:
+			entity.SetData()
+
+		var newHair : bool = entity.stat.hairstyle != hairstyle or entity.stat.haircolor != haircolor
+		entity.stat.hairstyle		= hairstyle
+		entity.stat.haircolor		= haircolor
+		if newHair and entity.visual:
+			entity.visual.SetHair()
+
+		var newBody : bool = entity.stat.gender != gender or entity.stat.race != race or entity.stat.skintone != skintone
+		entity.stat.gender			= gender
+		entity.stat.race			= race
+		entity.stat.skintone		= skintone
+		if newBody and entity.visual:
+			entity.visual.SetBody()
+			entity.visual.SetFace()
+
+		entity.stat.RefreshVitalStats()
+
+func DisplayProgressionTracker(label : String, value : int, maxValue : int, unit : String, _peerID : int):
+	if Launcher.GUI and Launcher.GUI.progressionTracker:
+		Launcher.GUI.progressionTracker.Display(label, value, maxValue, unit)
+
+func ClearProgressionTracker(_peerID : int):
+	if Launcher.GUI and Launcher.GUI.progressionTracker:
+		Launcher.GUI.progressionTracker.Clear()
+
+func UpdatePrivateStats(experience : int, gp : int, mana : int, stamina : int, karma : int, weight : float, shape : int, spirit : int, _peerID : int):
+	if Launcher.Player and Launcher.Player.stat:
+		Launcher.Player.stat.experience		= experience
+		Launcher.Player.stat.gp				= gp
+		Launcher.Player.stat.mana			= mana
+		Launcher.Player.stat.stamina		= stamina
+		Launcher.Player.stat.karma			= karma
+		Launcher.Player.stat.weight			= weight
+		Launcher.Player.stat.shape			= shape
+		Launcher.Player.stat.spirit			= spirit
+		Launcher.Player.stat.RefreshVitalStats()
+
+func UpdateAttributes(strength : int, vitality : int, agility : int, endurance : int, concentration : int, _peerID : int):
+	if Launcher.Player and Launcher.Player.stat:
+		Launcher.Player.stat.strength		= strength
+		Launcher.Player.stat.vitality		= vitality
+		Launcher.Player.stat.agility		= agility
+		Launcher.Player.stat.endurance		= endurance
+		Launcher.Player.stat.concentration	= concentration
+		Launcher.Player.stat.RefreshAttributes()
+
+func LevelUp(agentRID : int, _peerID : int):
+	if Launcher.Map:
+		var entity : Entity = Entities.Get(agentRID)
+		if entity and entity.get_parent() and entity.stat:
+			entity.LevelUp()
+
+func ItemAdded(itemID : int, customfield : StringName, count : int, _peerID : int):
+	if Launcher.Player:
+		var cell : BaseCell = DB.GetItem(itemID, customfield)
+		if cell and Launcher.Player.inventory.PushItem(cell, count):
+			if Launcher.GUI:
+				Launcher.GUI.pickupPanel.AddLast(cell, count)
+				Launcher.GUI.inventoryWindow.RefreshInventory()
+				Launcher.GUI.tradePanel.RefreshInventory()
+				var countText : String = " x" + str(count) if count > 1 else ""
+				Launcher.GUI.chatContainer.AddLocalFeedback("You receive " + cell.name + countText)
+			if not (cell is ItemCell and CellCommons.IsEquipment(cell)):
+				cell.used.emit()
+
+func ItemRemoved(itemID : int, customfield : StringName, count : int, itemIndex : int, _peerID : int):
+	if Launcher.Player:
+		var cell : BaseCell = DB.GetItem(itemID, customfield)
+		if cell:
+			Launcher.Player.inventory.PopItem(cell, count, itemIndex)
+			CellTile.RefreshShortcuts(cell)
+			if Launcher.GUI and Launcher.GUI.inventoryWindow:
+				Launcher.GUI.inventoryWindow.RefreshInventory()
+				Launcher.GUI.tradePanel.RefreshInventory()
+			if not (cell is ItemCell and CellCommons.IsEquipment(cell)):
+				cell.used.emit()
+
+func ItemEquiped(agentRID : int, itemID : int, customfield : StringName, state : bool, itemIndex : int, _peerID : int):
+	var entity : Entity = Entities.Get(agentRID)
+	if Launcher.Map:
+		var entry : EntityCacheEntry = Launcher.Map.entityCache.get(agentRID, null)
+		if entry:
+			ActorInventory.UpdateExportedEquipment(entry.equipment, itemID, customfield, state)
+	if entity:
+		var cell : ItemCell = DB.GetItem(itemID, customfield)
+		if cell:
+			if state:
+				entity.inventory.EquipItem(cell, itemIndex)
+			else:
+				entity.inventory.UnequipItem(cell)
+
+			entity.visual.SetEquipment(cell.slot)
+			if entity == Launcher.Player:
+				Launcher.GUI.inventoryWindow.RefreshInventory()
+				Launcher.GUI.tradePanel.RefreshInventory()
+				if not CellCommons.IsEquipment(cell):
+					cell.used.emit()
+
+func RefreshInventory(cells : Array[Dictionary], _peerID : int):
+	if Launcher.Player and Launcher.Player.inventory:
+		Launcher.Player.inventory.ImportInventory(cells)
+	if Launcher.GUI and Launcher.GUI.inventoryWindow:
+		Launcher.GUI.inventoryWindow.RefreshInventory()
+		Launcher.GUI.tradePanel.RefreshInventory()
+
+func RefreshEquipment(agentRID : int, equipment : Dictionary, _peerID : int):
+	if Launcher.Map:
+		var entry : EntityCacheEntry = Launcher.Map.entityCache.get(agentRID, null)
+		if entry:
+			entry.equipment = equipment
+
+	var entity : Entity = Entities.Get(agentRID)
+	if entity:
+		if entity.inventory:
+			entity.inventory.ImportEquipment(equipment)
+		if entity == Launcher.Player and Launcher.GUI and Launcher.GUI.inventoryWindow:
+			Launcher.GUI.inventoryWindow.RefreshInventory()
+
+func TradeRequested(requesterName : String, _peerID : int):
+	if Launcher.GUI:
+		UICommons.MessageBox("%s wants to trade with you." % requesterName,
+			Network.TradeRespond.bind(true), "Accept",
+			Network.TradeRespond.bind(false), "Decline")
+		Launcher.GUI.messageBox.closeCallback = Launcher.GUI.messageBox.Call.bind(Network.TradeRespond.bind(false))
+
+func TradeOpened(otherName : String, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.tradePanel.Open(otherName)
+
+func TradeUpdate(ownOffer : Array, ownGP : int, otherOffer : Array, otherGP : int, ownLocked : bool, otherLocked : bool, revision : int, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.tradePanel.UpdateOffers(ownOffer, ownGP, otherOffer, otherGP, ownLocked, otherLocked, revision)
+
+func TradeClosed(reason : String, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.tradePanel.Close(reason)
+
+func MerchantOpened(merchantName : String, stockPrices : Dictionary, sellPrices : Dictionary, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.tradePanel.OpenMerchant(merchantName, stockPrices, sellPrices)
+
+func DropAdded(dropID : int, itemID : int, customfield : StringName, pos : Vector2, _peerID : int):
+	if Launcher.Map:
+		Launcher.Map.AddDrop(dropID, DB.GetItem(itemID, customfield), pos)
+
+func DropRemoved(dropID : int, _peerID : int):
+	if Launcher.Map:
+		Launcher.Map.RemoveDrop(dropID)
+
+#
+func DisplayActions(actions : PackedStringArray, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.DisplayActions(actions, UICommons.DisplayActionLongDelaySec)
+
+func PushNotification(notif : String, _peerID : int):
+	if Launcher.Player and Launcher.GUI:
+		Launcher.GUI.notificationLabel.AddNotification(notif)
+
+func RefreshOnlineList(players : PackedStringArray, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.socialWindow.RefreshOnline(players)
+
+func AddOnlinePlayer(playerName : String, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.socialWindow.AddOnlinePlayer(playerName)
+
+func RemoveOnlinePlayer(playerName : String, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.socialWindow.RemoveOnlinePlayer(playerName)
+
+#
+func AuthError(err : NetworkCommons.AuthError, _peerID : int):
+	if Launcher.GUI:
+		if err == NetworkCommons.AuthError.ERR_PASSWORD_CHANGE_OK or err == NetworkCommons.AuthError.ERR_PASSWORD_CHANGE_WRONG:
+			Launcher.GUI.settingsWindow.set_account_password(err)
+		else:
+			Launcher.GUI.loginPanel.FillWarningLabel(err)
+			if err == NetworkCommons.AuthError.ERR_OK:
+				Launcher.GUI.loginPanel.SaveAccountName()
+				FSM.EnterState(FSM.States.CHAR_SCREEN)
+
+func AuthTokenResult(accountName : String, token : String, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.loginPanel.SaveToken(accountName, token)
+
+func CharacterError(err : NetworkCommons.AuthError, _peerID : int):
+	if Launcher.GUI:
+		Launcher.GUI.characterPanel.FillWarningLabel(err)
+
+func CharacterInfo(info : Dictionary, equipment : Dictionary, _peerID : int):
+	Launcher.GUI.characterPanel.AddCharacter(info, equipment)
+
+# Progress
+func UpdateSkill(skillID : int, level : int, _peerID : int, notify : bool = true):
+	if Launcher.Player:
+		var skill : SkillCell = DB.GetSkill(skillID)
+		if skill:
+			Launcher.Player.progress.AddSkill(skill, level)
+			if Launcher.GUI and Launcher.GUI.skillWindow:
+				Launcher.GUI.skillWindow.RefreshSkills()
+			if notify:
+				Launcher.Player.sfx.HandleAlteration(ActorCommons.Alteration.SKILL_UP)
+
+func UpdateBuff(effect : CellCommons.Modifier, value : Variant, duration : float, skillID : int, _peerID : int):
+	if Launcher.Player:
+		if duration != 0.0:
+			Launcher.Player.stat.buffs.Apply(effect, value, duration, skillID, false)
+		else:
+			Launcher.Player.stat.buffs.Clear(effect)
+
+func UpdateBestiary(mobID : int, count : int, _peerID : int, _notify : bool = true):
+	if Launcher.Player:
+		Launcher.Player.progress.AddBestiary(mobID, count)
+		if Launcher.GUI and Launcher.GUI.progressWindow:
+			Launcher.GUI.progressWindow.RefreshBestiary(mobID, count)
+
+func UpdateQuest(questID : int, state : int, _peerID : int, notify : bool = true):
+	if Launcher.Player:
+		Launcher.Player.progress.SetQuest(questID, state)
+		Entities.RefreshQuestHighlights(questID)
+		if Launcher.GUI and Launcher.GUI.progressWindow:
+			Launcher.GUI.progressWindow.RefreshQuest(questID, state)
+		if notify:
+			Launcher.Player.sfx.HandleAlteration(ActorCommons.Alteration.QUEST_COMPLETE if state == ProgressCommons.CompletedProgress else ActorCommons.Alteration.QUEST_UPDATE)
+
+func RefreshProgress(skills : Dictionary, quests : Dictionary, bestiary : Dictionary, peerID : int):
+	if Launcher.GUI and Launcher.GUI.progressWindow:
+		Launcher.GUI.progressWindow.Clear()
+	if Launcher.Player:
+		for skill in skills:
+			UpdateSkill(skill, skills[skill], peerID, false)
+		for quest in quests:
+			UpdateQuest(quest, quests[quest], peerID, false)
+		for mob in bestiary:
+			UpdateBestiary(mob, bestiary[mob], peerID, false)
+
+#
+func CommandFeedback(feedback : String, _peerID : int):
+	if Launcher.GUI and Launcher.GUI.chatContainer:
+		Launcher.GUI.chatContainer.AddLocalFeedback(feedback)
+
+func CommandModifier(effect : CellCommons.Modifier, value : float, _peerID : int):
+	if not Launcher.Player or not Launcher.Player.stat or not Launcher.Player.stat.modifiers:
+		return false
+
+	for modifier in Launcher.Player.stat.modifiers._modifiers:
+		if modifier._effect == effect and modifier._command:
+			Launcher.Player.stat.modifiers.Remove(modifier)
+
+	if value > 0.0:
+		var modifier : StatModifier = StatModifier.new()
+		modifier._effect = effect
+		modifier._value = value
+		modifier._persistent = true
+		modifier._command = true
+		Launcher.Player.stat.modifiers.Add(modifier)
+
+	Launcher.Player.stat.RefreshAttributes()
+
+#
+func IsActiveClient() -> bool:
+	return Network.Client == self or Network.WebRTCClient == self
+
+func ConnectServer():
+	if not IsActiveClient():
+		return
+
+	Network.clientConnected = true
+	if not isOffline:
+		interfaceID = multiplayerAPI.get_unique_id()
+	if Launcher.GUI and Launcher.GUI.loginPanel:
+		Launcher.GUI.loginPanel.EnableButtons.call_deferred(true)
+
+	var transportType : Peers.TransportType = Peers.TransportType.ENET
+	if isOffline:
+		transportType = Peers.TransportType.OFFLINE
+	elif useWebSocket:
+		transportType = Peers.TransportType.WEBSOCKET
+	Peers.AddPeer(NetworkCommons.PeerAuthorityID, transportType)
+	Peers.SetTransport(NetworkCommons.PeerAuthorityID, transportType)
+	Monitoring.SetTransport(transportType)
+
+	if not isOffline and Network.WebRTCClient:
+		Network.RequestRtcUpgrade()
+
+func DisconnectServer():
+	if not IsActiveClient():
+		return
+
+	Network.clientConnected = false
+	if Network.webRTCActive:
+		Util.PrintLog("Client", "WebSocket dropped, continuing on WebRTC")
+		return
+	Launcher.Mode(true, true)
+	FSM.EnterState(FSM.States.LOGIN_SCREEN)
+	Peers.RemovePeer(NetworkCommons.PeerOfflineID)
+
+func ConnectionFailed():
+	DisconnectServer()
+	AuthError(NetworkCommons.AuthError.ERR_SERVER_UNREACHABLE, NetworkCommons.PeerOfflineID)
+
+#
+func _enter_tree():
+	if not IsActiveClient():
+		return
+
+	if isOffline:
+		interfaceID = NetworkCommons.PeerOfflineID
+		ConnectServer.call_deferred()
+		return
+
+	if useWebRTC:
+		return
+
+	if not multiplayerAPI.connected_to_server.is_connected(ConnectServer):
+		multiplayerAPI.connected_to_server.connect(ConnectServer)
+	if not multiplayerAPI.connection_failed.is_connected(ConnectionFailed):
+		multiplayerAPI.connection_failed.connect(ConnectionFailed)
+	if not multiplayerAPI.server_disconnected.is_connected(DisconnectServer):
+		multiplayerAPI.server_disconnected.connect(DisconnectServer)
+	if not multiplayerAPI.peer_authenticating.is_connected(_OnServerAuthenticating):
+		multiplayerAPI.peer_authenticating.connect(_OnServerAuthenticating)
+	multiplayerAPI.auth_callback = _ValidateServerAuth
+
+	var serverAddress : String = NetworkCommons.LocalServerAddress if isLocal else NetworkCommons.ServerAddress
+	var serverPort : int = NetworkCommons.WebSocketPort if useWebSocket else NetworkCommons.ENetPort
+	if LauncherCommons.IsTesting:
+		serverAddress = NetworkCommons.LocalServerAddress if isLocal else NetworkCommons.ServerAddressTesting
+		serverPort = NetworkCommons.WebSocketPortTesting if useWebSocket else NetworkCommons.ENetPortTesting
+
+	var ret : Error = FAILED
+	var tlsOptions : TLSOptions = TLSOptions.client_unsafe()
+	if useWebSocket:
+		var prefix : String = "ws://" if isLocal else "wss://"
+		ret = currentPeer.create_client(prefix + serverAddress + ":" + str(serverPort), tlsOptions)
+	else:
+		ret = currentPeer.create_client(serverAddress, serverPort)
+		if ret == OK and not isLocal:
+			ret = currentPeer.host.dtls_client_setup(serverAddress, tlsOptions)
+
+	assert(ret == OK, "Client could not connect, please check the server adress %s and port number %d" % [serverAddress, serverPort])
+	if ret == OK:
+		currentPeer.set_target_peer(MultiplayerPeer.TARGET_PEER_SERVER)
+		multiplayerAPI.multiplayer_peer = currentPeer
+
+		Util.PrintLog("Client", "Initialized with: %s, %s, %s, %s" % [
+			"WebSocket" if useWebSocket else "ENet",
+			"Offline" if isOffline else "Online",
+			"Local" if isLocal else "Public",
+			"Testing" if LauncherCommons.IsTesting else "Release"
+		])
+
+func _OnServerAuthenticating(peerID: int):
+	var authData : PackedByteArray = PackedByteArray()
+	authData.resize(8)
+	authData.encode_s64(0, NetworkCommons.ProtocolVersion)
+	multiplayerAPI.send_auth(peerID, authData)
+
+func _ValidateServerAuth(peerID: int, _data: PackedByteArray):
+	multiplayerAPI.complete_auth(peerID)
+
+# WebRTC signaling handlers (received over the WebSocket transport)
+func RtcConfig(iceServers : Array, _peerID : int):
+	if Network.WebRTCClient:
+		Network.WebRTCClient.SetRtcIceServers(iceServers)
+
+func RtcOffer(sdp : String, _peerID : int):
+	if Network.WebRTCClient:
+		Network.WebRTCClient.HandleRtcOffer(sdp)
+
+func RtcCandidateToClient(media : String, index : int, candidateName : String, _peerID : int):
+	if Network.WebRTCClient:
+		Network.WebRTCClient.AddRtcIceCandidate(NetworkCommons.PeerAuthorityID, media, index, candidateName)
+
+# WebRTC client transport
+func SetRtcIceServers(iceServers : Array):
+	var typed : Array[Dictionary] = []
+	for entry in iceServers:
+		if entry is Dictionary:
+			typed.append(entry)
+	if not typed.is_empty():
+		rtcIceServers = typed
+
+func HandleRtcOffer(sdp : String):
+	var connection : WebRTCPeerConnection = rtcConnections.get(NetworkCommons.PeerAuthorityID, null)
+	if not connection:
+		interfaceID = Network.Client.interfaceID
+		var err : Error = RtcMultiplayerPeer().create_client(interfaceID, NetworkCommons.RtcChannelsConfig)
+		if err != OK:
+			Util.PrintLog("Client", "WebRTC create_client failed (id=%d, err=%d), staying on WebSocket" % [interfaceID, err])
+			return
+
+		multiplayerAPI.multiplayer_peer = currentPeer
+		if not multiplayerAPI.connected_to_server.is_connected(_OnRtcConnectedToServer):
+			multiplayerAPI.connected_to_server.connect(_OnRtcConnectedToServer)
+		if not multiplayerAPI.server_disconnected.is_connected(_OnRtcServerDisconnected):
+			multiplayerAPI.server_disconnected.connect(_OnRtcServerDisconnected)
+		connection = CreateRtcConnection(NetworkCommons.PeerAuthorityID)
+	connection.set_remote_description("offer", sdp)
+
+func _OnRtcConnectedToServer():
+	Network.webRTCActive = true
+	Network.RtcReady()
+	Monitoring.SetTransport(Peers.TransportType.WEBRTC)
+	Util.PrintLog("Client", "WebRTC transport connected")
+
+func _OnRtcServerDisconnected():
+	Network.webRTCActive = false
+	RemoveRtcConnection(NetworkCommons.PeerAuthorityID)
+	if not Network.clientConnected:
+		DisconnectServer()
+
+func Destroy():
+	Peers.RemovePeer(NetworkCommons.PeerAuthorityID)
+	if multiplayerAPI.connected_to_server.is_connected(ConnectServer):
+		multiplayerAPI.connected_to_server.disconnect(ConnectServer)
+	if multiplayerAPI.connection_failed.is_connected(ConnectionFailed):
+		multiplayerAPI.connection_failed.disconnect(ConnectionFailed)
+	if multiplayerAPI.server_disconnected.is_connected(DisconnectServer):
+		multiplayerAPI.server_disconnected.disconnect(DisconnectServer)
+	if multiplayerAPI.peer_authenticating.is_connected(_OnServerAuthenticating):
+		multiplayerAPI.peer_authenticating.disconnect(_OnServerAuthenticating)
+
+	super.Destroy()

@@ -1,0 +1,471 @@
+extends WindowPanel
+
+const creditsJson : JSON						= preload("res://data/db/credits.json")
+
+@onready var creditsContainer : VBoxContainer	= $Layout/Margin/TabBar/Credits/Margin/VBox
+
+@onready var renderAccessors : Dictionary = {
+	"Render-MinWindowSize": [init_minwinsize, set_minwinsize, apply_minwinsize, null],
+	"Render-Fullscreen": [init_fullscreen, set_fullscreen, apply_fullscreen, $Layout/Margin/TabBar/Render/RenderVBox/VisualVBox/Fullscreen],
+	"Render-Scaling": [init_scaling, set_scaling, apply_scaling, $Layout/Margin/TabBar/Render/RenderVBox/VisualVBox/Scaling/Option],
+	"Render-WindowSize": [init_resolution, set_resolution, apply_resolution, $Layout/Margin/TabBar/Render/RenderVBox/VisualVBox/WindowResolution/Option],
+	"Render-WindowPos": [init_windowPos, set_windowPos, apply_windowPos, null],
+	"Render-ActionOverlay": [init_actionoverlay, set_actionoverlay, apply_actionoverlay, $Layout/Margin/TabBar/Render/RenderVBox/VisualVBox/ActionOverlay],
+	"Render-Lighting": [init_lighting, set_lighting, apply_lighting, $Layout/Margin/TabBar/Render/RenderVBox/EffectVBox/Lighting],
+	"Render-HQ4x": [init_hq4x, set_hq4x, apply_hq4x, $Layout/Margin/TabBar/Render/RenderVBox/EffectVBox/HQx4],
+	"Render-CRT": [init_crt, set_crt, apply_crt, $Layout/Margin/TabBar/Render/RenderVBox/EffectVBox/CRT],
+	"Audio-General": [init_audiogeneral, set_audiogeneral, apply_audiogeneral, $"Layout/Margin/TabBar/Audio/VBoxContainer/VolumeVBox/Global/HSlider"],
+	"Audio-Music": [init_audiomusic, set_audiomusic, apply_audiomusic, $"Layout/Margin/TabBar/Audio/VBoxContainer/VolumeVBox/Music/HSlider"],
+	"Audio-Alteration": [init_audioalteration, set_audioalteration, apply_audioalteration, $"Layout/Margin/TabBar/Audio/VBoxContainer/VolumeVBox/Alteration SFX/HSlider"],
+	"Audio-Notification": [init_audionotification, set_audionotification, apply_audionotification, $"Layout/Margin/TabBar/Audio/VBoxContainer/VolumeVBox/Notification SFX/HSlider"],
+	"Audio-State": [init_audiostate, set_audiostate, apply_audiostate, $"Layout/Margin/TabBar/Audio/VBoxContainer/VolumeVBox/State SFX/HSlider"],
+	"Audio-Others": [init_audioothers, set_audioothers, apply_audioothers, $"Layout/Margin/TabBar/Audio/VBoxContainer/VolumeVBox/Other Entities/HSlider"],
+	"Audio-MuteUnfocused": [init_audiomuteunfocused, set_audiomuteunfocused, apply_audiomuteunfocused, $Layout/Margin/TabBar/Audio/VBoxContainer/MuteUnfocused],
+	"Session-AccountName": [init_sessionaccountname, set_sessionaccountname, apply_sessionaccountname, null],
+	"Session-FirstLogin": [init_sessionfirstlogin, set_sessionfirstlogin, apply_sessionfirstlogin, null],
+	"Session-Overlay": [init_sessionoverlay, set_sessionoverlay, apply_sessionoverlay, null],
+	"Session-DialogueHeight": [init_sessiondialogueheight, set_sessiondialogueheight, apply_sessiondialogueheight, null],
+	"Session-ShortcutCells": [init_shortcutcells, set_shortcutcells, apply_shortcutcells, null],
+	"Input-Bindings": [init_inputbindings, null, null, null],
+	"Account-PasswordChange": [null, set_account_password, null, $Layout/Margin/TabBar/Account],
+	"Privacy-BugReports": [init_bugreports, set_bugreports, apply_bugreports, $Layout/Margin/TabBar/Privacy/PrivacyVBox/BugReports],
+	"Network-Local": [init_localserver, set_localserver, apply_localserver, $Layout/Margin/TabBar/Privacy/PrivacyVBox/LocalServer],
+}
+
+enum CATEGORY { RENDER, SOUND, INPUT, COUNT }
+enum ACC_TYPE { INIT, SET, APPLY, LABEL }
+
+# MinWindowSize
+func init_minwinsize(apply : bool):
+	if apply:
+		var minSize : Vector2 = GetVal("Render-MinWindowSize")
+		apply_minwinsize(minSize)
+func set_minwinsize(minSize : Vector2):
+	SetVal("Render-MinWindowSize", minSize)
+	apply_minwinsize(minSize)
+func apply_minwinsize(minSize : Vector2):
+	DisplayServer.window_set_min_size(minSize, 0)
+
+# FullScreen
+func init_fullscreen(apply : bool):
+	var pressed : bool = is_fullscreen()
+	renderAccessors["Render-Fullscreen"][ACC_TYPE.LABEL].set_pressed_no_signal(pressed)
+	if apply:
+		apply_fullscreen(pressed)
+func is_fullscreen() -> bool:
+	return GetVal("Render-Fullscreen")
+func set_fullscreen(pressed : bool, apply : bool = true):
+	SetVal("Render-Fullscreen", pressed)
+	if apply:
+		apply_fullscreen(pressed)
+func apply_fullscreen(pressed : bool):
+	renderAccessors["Render-Fullscreen"][ACC_TYPE.LABEL].set_pressed_no_signal(pressed)
+	if pressed:
+		clear_resolution_labels()
+		if DisplayServer.window_get_mode(0) != DisplayServer.WINDOW_MODE_FULLSCREEN:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	else:
+		populate_resolution_labels(DisplayServer.screen_get_size())
+		if DisplayServer.window_get_mode(0) != DisplayServer.WINDOW_MODE_WINDOWED:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
+
+# Window Resolution
+const resolutionEntriesCount : int = 5
+func init_resolution(apply : bool):
+	var resolution : Vector2i = GetVal("Render-WindowSize")
+	populate_resolution_labels(resolution)
+	if apply:
+		apply_resolution(resolution)
+func clear_resolution_labels():
+	renderAccessors["Render-WindowSize"][ACC_TYPE.LABEL].clear()
+func populate_resolution_labels(resolution : Vector2i):
+	clear_resolution_labels()
+	if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_FULLSCREEN:
+		var minScreenSize : Vector2i = GetVal("Render-MinWindowSize")
+		var maxScreenSize : Vector2i = DisplayServer.screen_get_size()
+		var label : OptionButton = renderAccessors["Render-WindowSize"][ACC_TYPE.LABEL]
+		for i in resolutionEntriesCount:
+			var item : Vector2i = calculate_resolution(i, minScreenSize, maxScreenSize)
+			label.add_item(str(item))
+		label.add_separator()
+		label.add_item(str(resolution))
+		label.selected = label.item_count - 1
+func calculate_resolution(index : int, minScreenSize : Vector2, maxScreenSize : Vector2) -> Vector2i:
+	return lerp(minScreenSize, maxScreenSize, index / maxf(resolutionEntriesCount - 1, 1.0))
+func set_resolutionIdx(resolutionIdx : int):
+	var minScreenSize : Vector2i = GetVal("Render-MinWindowSize")
+	var maxScreenSize : Vector2i = DisplayServer.screen_get_size()
+	var resolution : Vector2i = calculate_resolution(resolutionIdx, minScreenSize, maxScreenSize)
+	set_resolution(resolution)
+func set_resolution(resolution : Vector2i, apply : bool = true):
+	SetVal("Render-WindowSize", resolution)
+	if apply:
+		apply_resolution(resolution)
+func apply_resolution(resolution : Vector2i):
+	var windowSize : Vector2i = DisplayServer.screen_get_size()
+	var minScreenSize : Vector2i = GetVal("Render-MinWindowSize")
+
+	var newSize : Vector2i = clamp(resolution, minScreenSize, windowSize)
+	var currentPos : Vector2i = GetVal("Render-WindowPos")
+	if currentPos == Vector2i(-1, -1):
+		currentPos = (windowSize - newSize) / 2.0
+	var newPosition : Vector2i = Vector2i(clampi(currentPos.x, 0, (windowSize - newSize).x), clampi(currentPos.y, 0, (windowSize - newSize).y))
+	DisplayServer.window_set_size(newSize)
+	set_windowPos(newPosition)
+	init_actionoverlay(true)
+	populate_resolution_labels(newSize)
+
+# Window Position
+func init_windowPos(apply : bool):
+	if apply:
+		var pos : Vector2 = GetVal("Render-WindowPos")
+		apply_windowPos(pos)
+func set_windowPos(pos : Vector2, apply : bool = true):
+	SetVal("Render-WindowPos", pos)
+	if apply:
+		apply_windowPos(pos)
+func save_windowPos():
+	set_windowPos(get_viewport().get_position())
+func apply_windowPos(pos : Vector2):
+	DisplayServer.window_set_position(pos)
+
+# DoubleResolution
+func init_scaling(apply : bool):
+	var mode : int = GetVal("Render-Scaling")
+	renderAccessors["Render-Scaling"][ACC_TYPE.LABEL].selected = mode
+	if apply:
+		apply_scaling(mode)
+func set_scaling(mode : int):
+	SetVal("Render-Scaling", mode)
+	apply_scaling(mode)
+func apply_scaling(mode : int):
+	Launcher.Root.set_content_scale_factor(mode + 1)
+	init_actionoverlay(true)
+
+# ActionOverlay
+func init_actionoverlay(apply : bool):
+	var enable : bool = GetVal("Render-ActionOverlay")
+	renderAccessors["Render-ActionOverlay"][ACC_TYPE.LABEL].set_pressed_no_signal(enable)
+	if apply:
+		apply_actionoverlay(enable)
+func set_actionoverlay(enable : bool):
+	SetVal("Render-ActionOverlay", enable)
+	apply_actionoverlay(enable)
+func apply_actionoverlay(enable : bool):
+	if Launcher.GUI and Launcher.GUI.sticks:
+		Launcher.GUI.sticks.Enable(enable)
+
+# Lighting
+func init_lighting(apply : bool):
+	var enable : bool = GetVal("Render-Lighting")
+	renderAccessors["Render-Lighting"][ACC_TYPE.LABEL].set_pressed_no_signal(enable)
+	if apply:
+		apply_lighting(enable)
+func set_lighting(enable : bool):
+	SetVal("Render-Lighting", enable)
+	apply_lighting(enable)
+func apply_lighting(enable : bool):
+	Effects.EnableLighting(enable)
+
+# HQ4x
+func init_hq4x(apply : bool):
+	var enable : bool = GetVal("Render-HQ4x")
+	renderAccessors["Render-HQ4x"][ACC_TYPE.LABEL].set_pressed_no_signal(enable)
+	if apply:
+		apply_hq4x(enable)
+func set_hq4x(enable : bool):
+	SetVal("Render-HQ4x", enable)
+	apply_hq4x(enable)
+func apply_hq4x(enable : bool):
+	if Launcher.GUI and Launcher.GUI.HQ4xShader:
+		Launcher.GUI.HQ4xShader.set_visible(enable)
+
+# CRT
+func init_crt(apply : bool):
+	var enable : bool = GetVal("Render-CRT")
+	renderAccessors["Render-CRT"][ACC_TYPE.LABEL].set_pressed_no_signal(enable)
+	if apply:
+		apply_crt(enable)
+func set_crt(enable : bool):
+	SetVal("Render-CRT", enable)
+	apply_crt(enable)
+func apply_crt(enable : bool):
+	if Launcher.GUI and Launcher.GUI.CRTShader:
+		Launcher.GUI.CRTShader.set_visible(enable)
+
+# Audio General
+func init_audiogeneral(apply : bool):
+	var volumeRatio : float = GetVal("Audio-General")
+	renderAccessors["Audio-General"][ACC_TYPE.LABEL].value = volumeRatio
+	if apply:
+		apply_audiogeneral(volumeRatio)
+func set_audiogeneral(volumeRatio : float):
+	SetVal("Audio-General", volumeRatio)
+	apply_audiogeneral(volumeRatio)
+func apply_audiogeneral(volumeRatio : float):
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(ActorCommons.MasterBus), Util.VolumeRatioToDb(volumeRatio))
+
+# Audio Music
+func init_audiomusic(apply : bool):
+	var volumeRatio : float = GetVal("Audio-Music")
+	renderAccessors["Audio-Music"][ACC_TYPE.LABEL].value = volumeRatio
+	if apply:
+		apply_audiomusic(volumeRatio)
+func set_audiomusic(volumeRatio : float):
+	SetVal("Audio-Music", volumeRatio)
+	apply_audiomusic(volumeRatio)
+func apply_audiomusic(volumeRatio : float):
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(ActorCommons.MusicBus), Util.VolumeRatioToDb(volumeRatio))
+
+# Audio Alteration SFX
+func init_audioalteration(apply : bool):
+	var volumeRatio : float = GetVal("Audio-Alteration")
+	renderAccessors["Audio-Alteration"][ACC_TYPE.LABEL].value = volumeRatio
+	if apply:
+		apply_audioalteration(volumeRatio)
+func set_audioalteration(volumeRatio : float):
+	SetVal("Audio-Alteration", volumeRatio)
+	apply_audioalteration(volumeRatio)
+func apply_audioalteration(volumeRatio : float):
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(ActorCommons.SfxAlterationBus), Util.VolumeRatioToDb(volumeRatio))
+
+# Audio Notification SFX
+func init_audionotification(apply : bool):
+	var volumeRatio : float = GetVal("Audio-Notification")
+	renderAccessors["Audio-Notification"][ACC_TYPE.LABEL].value = volumeRatio
+	if apply:
+		apply_audionotification(volumeRatio)
+func set_audionotification(volumeRatio : float):
+	SetVal("Audio-Notification", volumeRatio)
+	apply_audionotification(volumeRatio)
+func apply_audionotification(volumeRatio : float):
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(ActorCommons.SfxNotificationBus), Util.VolumeRatioToDb(volumeRatio))
+
+# Audio State SFX
+func init_audiostate(apply : bool):
+	var volumeRatio : float = GetVal("Audio-State")
+	renderAccessors["Audio-State"][ACC_TYPE.LABEL].value = volumeRatio
+	if apply:
+		apply_audiostate(volumeRatio)
+func set_audiostate(volumeRatio : float):
+	SetVal("Audio-State", volumeRatio)
+	apply_audiostate(volumeRatio)
+func apply_audiostate(volumeRatio : float):
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(ActorCommons.SfxStateBus), Util.VolumeRatioToDb(volumeRatio))
+
+# Audio Other Entities
+func init_audioothers(apply : bool):
+	var volumeRatio : float = GetVal("Audio-Others")
+	renderAccessors["Audio-Others"][ACC_TYPE.LABEL].value = volumeRatio
+	if apply:
+		apply_audioothers(volumeRatio)
+func set_audioothers(volumeRatio : float):
+	SetVal("Audio-Others", volumeRatio)
+	apply_audioothers(volumeRatio)
+func apply_audioothers(volumeRatio : float):
+	EntitySfx.othersVolumeDb = Util.VolumeRatioToDb(volumeRatio)
+
+# Audio Mute When Unfocused
+func init_audiomuteunfocused(apply : bool):
+	var enable : bool = GetVal("Audio-MuteUnfocused")
+	renderAccessors["Audio-MuteUnfocused"][ACC_TYPE.LABEL].set_pressed_no_signal(enable)
+	if apply:
+		apply_audiomuteunfocused(enable)
+func set_audiomuteunfocused(enable : bool):
+	SetVal("Audio-MuteUnfocused", enable)
+	apply_audiomuteunfocused(enable)
+func apply_audiomuteunfocused(enable : bool):
+	if Launcher.Audio:
+		Launcher.Audio.SetMuteUnfocused(enable)
+
+# Session Account Name
+func init_sessionaccountname(apply : bool):
+	if apply:
+		var accountName : String = GetVal("Session-AccountName")
+		apply_sessionaccountname(accountName)
+func set_sessionaccountname(accountName : String):
+	SetVal("Session-AccountName", accountName)
+	apply_sessionaccountname(accountName)
+func apply_sessionaccountname(accountName : String):
+	if Launcher.GUI and Launcher.GUI.loginPanel:
+		Launcher.GUI.loginPanel.nameTextControl.set_text(accountName)
+
+# Session First Login
+func init_sessionfirstlogin(apply : bool):
+	if apply:
+		var firstTime : bool = GetVal("Session-FirstLogin")
+		apply_sessionfirstlogin(firstTime)
+func set_sessionfirstlogin(firstTime : bool):
+	SetVal("Session-FirstLogin", firstTime)
+	apply_sessionfirstlogin(firstTime)
+func apply_sessionfirstlogin(firstTime : bool):
+	if Launcher.GUI and firstTime:
+		Launcher.GUI.DisplayFirstLogin()
+
+# Session Windows Overlay placement
+enum ESessionOverlay { NAME = 0, POSITION, SIZE, COUNT}
+func init_sessionoverlay(apply : bool):
+	if apply:
+		var overlay : Array = GetVal("Session-Overlay")
+		apply_sessionoverlay(overlay)
+func save_sessionoverlay():
+	var overlay : Array = []
+	if Launcher.GUI and Launcher.GUI.windows:
+		for window in Launcher.GUI.windows.get_children():
+			if window.is_visible() and window.saveOverlayState:
+				overlay.append([window.get_name().get_file(), window.get_position(), window.get_size()])
+		set_sessionoverlay(overlay)
+func reset_sessionoverlay():
+	if Launcher.GUI and Launcher.GUI.windows:
+		Launcher.GUI.windows.ResetWindowsLayout()
+		save_sessionoverlay()
+func set_sessionoverlay(overlay : Array):
+	SetVal("Session-Overlay", overlay)
+	apply_sessionoverlay(overlay)
+func apply_sessionoverlay(overlay : Array):
+	if Launcher.GUI and Launcher.GUI.windows:
+		for window in overlay:
+			if window.size() >= ESessionOverlay.COUNT:
+				var floatingWindow : WindowPanel = Launcher.GUI.windows.get_node(window[ESessionOverlay.NAME])
+				if floatingWindow:
+					floatingWindow.set_visible(true)
+					floatingWindow.set_size(window[ESessionOverlay.SIZE])
+					floatingWindow.set_position(window[ESessionOverlay.POSITION])
+					floatingWindow.UpdateWindow()
+
+# Session Dialogue auto-grow height
+func init_sessiondialogueheight(apply : bool):
+	if apply:
+		var height : float = GetVal("Session-DialogueHeight")
+		apply_sessiondialogueheight(height)
+func save_sessiondialogueheight():
+	if Launcher.GUI and Launcher.GUI.dialoguePanel:
+		set_sessiondialogueheight(Launcher.GUI.dialoguePanel.autoGrowHeight)
+func set_sessiondialogueheight(height : float):
+	SetVal("Session-DialogueHeight", height)
+	apply_sessiondialogueheight(height)
+func apply_sessiondialogueheight(height : float):
+	if Launcher.GUI and Launcher.GUI.dialoguePanel and height > 0.0:
+		Launcher.GUI.dialoguePanel.autoGrowHeight = height
+
+# Shortcut cells
+func init_shortcutcells(apply : bool):
+	if apply:
+		if not DB.isInitialized:
+			if not Launcher.dbInitialized.is_connected(load_shortcutcells):
+				Launcher.dbInitialized.connect(load_shortcutcells, CONNECT_ONE_SHOT)
+			return
+		load_shortcutcells()
+func load_shortcutcells():
+	var cells : Array = GetVal("Session-ShortcutCells")
+	apply_shortcutcells(cells)
+func save_shortcutcells():
+	var cells : Array = []
+	if Launcher.GUI:
+		for tile in Launcher.GUI.shortcutTiles:
+			if tile.is_visible() and tile.cell:
+				cells.append([tile.name, tile.cell.id, tile.cell.type])
+		set_shortcutcells(cells)
+func set_shortcutcells(cells : Array):
+	SetVal("Session-ShortcutCells", cells)
+func apply_shortcutcells(cells : Array):
+	if Launcher.GUI:
+		var tiles : Array[CellTile] = Launcher.GUI.shortcutTiles
+		for tile in tiles:
+			if cells.is_empty():
+				break
+			for cellInfo in cells:
+				if cellInfo and cellInfo is Array and cellInfo.size() >= 3 and cellInfo[0] == tile.name:
+					var cell : BaseCell = null
+					match cellInfo[2]:
+						CellCommons.Type.ITEM:
+							cell = DB.ItemsDB.get(cellInfo[1])
+						CellCommons.Type.EMOTE:
+							cell = DB.EmotesDB.get(cellInfo[1])
+						CellCommons.Type.SKILL:
+							cell = DB.SkillsDB.get(cellInfo[1])
+					if cell:
+						tile.AssignData(cell)
+						CellTile.RefreshShortcuts(cell)
+					cells.erase(cellInfo)
+					break
+
+# Bug Reports
+func init_bugreports(apply : bool):
+	var enable : bool = GetVal("Privacy-BugReports")
+	renderAccessors["Privacy-BugReports"][ACC_TYPE.LABEL].set_pressed_no_signal(enable)
+	if apply:
+		apply_bugreports(enable)
+func set_bugreports(enable : bool):
+	SetVal("Privacy-BugReports", enable)
+	apply_bugreports(enable)
+func apply_bugreports(_enable : bool):
+	pass
+
+# Local Server
+func init_localserver(apply : bool):
+	var enable : bool = GetVal("Network-Local")
+	renderAccessors["Network-Local"][ACC_TYPE.LABEL].set_pressed_no_signal(enable)
+	if apply:
+		apply_localserver(enable)
+func set_localserver(enable : bool):
+	SetVal("Network-Local", enable)
+	apply_localserver(enable)
+func apply_localserver(_enable : bool):
+	var isLocal : bool = OS.is_debug_build() and GetVal("Network-Local")
+	if isLocal != NetworkCommons.IsLocal:
+		NetworkCommons.IsLocal = isLocal
+		if NetworkCommons.IsLocal:
+			Launcher.Mode(true, false)
+
+# Input Bindings
+func init_inputbindings(apply : bool):
+	if apply:
+		InputBindings.LoadBindings()
+
+# Account
+func set_account_password(err : NetworkCommons.AuthError):
+	renderAccessors["Account-PasswordChange"][ACC_TYPE.LABEL].OnPasswordChangeResult(err)
+
+#
+func _on_visibility_changed():
+	RefreshSettings(false)
+
+func PopulateCredits():
+	Scrollable.AddCategories(creditsContainer, creditsJson.get_data())
+
+func _ready():
+	if not FSM:
+		return
+
+	PopulateCredits()
+	RefreshSettings(true)
+	FSM.enter_game.connect(RefreshSettings.bind(true))
+	FSM.exit_game.connect(SaveSettings.bind())
+
+	if LauncherCommons.isMobile or LauncherCommons.isWeb:
+		renderAccessors["Render-WindowSize"][ACC_TYPE.LABEL].get_parent().set_visible(false)
+		renderAccessors["Render-Fullscreen"][ACC_TYPE.LABEL].set_visible(false)
+
+	renderAccessors["Network-Local"][ACC_TYPE.LABEL].set_visible(OS.is_debug_build())
+
+# Conf accessors
+func RefreshSettings(apply : bool):
+	for option in renderAccessors:
+		var initFunc = renderAccessors[option][ACC_TYPE.INIT]
+		if initFunc:
+			initFunc.call_deferred(apply)
+
+func SaveSettings():
+	save_sessionoverlay()
+	save_sessiondialogueheight()
+	save_windowPos()
+	save_shortcutcells()
+	InputBindings.SaveBindings()
+	Conf.SaveType("settings", Conf.Type.USERSETTINGS)
+
+func SetVal(key : String, value):
+	Conf.SetValue(Conf.userSection, key, Conf.Type.USERSETTINGS, value)
+
+func GetVal(key : String):
+	return Conf.GetUserValue(key)
