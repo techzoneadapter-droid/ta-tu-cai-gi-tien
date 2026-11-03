@@ -1,0 +1,26 @@
+name: P00 Design Data Validation
+on:
+  push:
+    branches:
+      - p00/topdown-data-foundation
+    paths:
+      - 'design_data/**'
+      - 'tools/validate_design_snapshot.py'
+      - '.github/workflows/p00-design-data.yml'
+  pull_request:
+    paths:
+      - 'design_data/**'
+      - 'tools/validate_design_snapshot.py'
+      - '.github/workflows/p00-design-data.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate design snapshot
+        run: python tools/validate_design_snapshot.py design_data/sheet_snapshot.json
