@@ -1,0 +1,54 @@
+{
+  "source": "Google Sheets canonical design snapshot 2026-11-03",
+  "source_sheet_id": "1SQO5_lZZMe1EWVFkH4vEQq4fWH44UDUCSH_WuAtpMkM",
+  "classes": [
+    {
+      "id": "CLASS-001",
+      "name": "Pháp Tu",
+      "range": "Trung → xa / hỗ trợ"
+    },
+    {
+      "id": "CLASS-002",
+      "name": "Thể Tu",
+      "range": "Cận chiến"
+    },
+    {
+      "id": "CLASS-003",
+      "name": "Binh Tu",
+      "range": "Cận chiến → xa"
+    }
+  ],
+  "maps": [
+    {
+      "id": "MAP-001",
+      "name": "Thanh Vân Châu"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "NPC-001",
+      "name": "Tạ Vân Sinh",
+      "role": "Dẫn đạo / phát nhiệm vụ"
+    },
+    {
+      "id": "NPC-002",
+      "name": "Mộc Thanh Nhi",
+      "role": "Dược sư / cứu hộ"
+    },
+    {
+      "id": "NPC-003",
+      "name": "Hàn Thạch Công",
+      "role": "Thợ rèn / đúc"
+    }
+  ],
+  "quests": [
+    {
+      "id": "NV-001",
+      "name": "Tia sáng đầu tiên"
+    },
+    {
+      "id": "NV-002",
+      "name": "Đêm ở dược điền"
+    }
+  ]
+}
